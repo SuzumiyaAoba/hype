@@ -79,7 +79,7 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let reset = Reset.render();
 
     format!(
-        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}│{reset}  {pad}{wave_col}\n{dim}└─{reset} {pad}{carat} {msg}",
+        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}└{reset}  {pad}{wave_col} {msg}",
         hdr = red_bold.render(),
         msg = err.message,
         line = err.line,
@@ -87,7 +87,6 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
         text = line_str,
         pad = caret_pad,
         wave_col = format!("{}{}{}", red_bold.render(), wave, reset),
-        carat = format!("{}^{}", red_bold.render(), reset),
         dim = dim.render(),
         reset = reset
     )
