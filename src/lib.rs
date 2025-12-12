@@ -33,6 +33,7 @@ pub struct ParseError {
     pub position: usize,
     pub line: usize,
     pub col: usize,
+    pub len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,19 +70,22 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
         .unwrap_or("");
     let arrow_col = err.col.max(1);
     let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
+    let wave_len = err.len.max(1);
+    let wave = "~".repeat(wave_len);
 
     let red_bold = Style::new().fg_color(Some(AnsiColor::Red.into())).bold();
     let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     let reset = Reset.render();
 
     format!(
-        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}└─{reset} {pad}{carat}",
+        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}│{reset}  {pad}{wave}\n{dim}└─{reset} {pad}{carat} {msg}",
         hdr = red_bold.render(),
         msg = err.message,
         line = err.line,
         col = err.col,
         text = line_str,
         pad = caret_pad,
+        wave = wave,
         carat = format!("{}^{}", red_bold.render(), reset),
         dim = dim.render(),
         reset = reset
@@ -115,6 +119,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                     position: span.offset,
                     line: span.line,
                     col: span.col,
+                    len: buf.len(),
                 })?;
                 tokens.push(Token {
                     kind: TokenKind::Number(value),
@@ -153,6 +158,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                     position: span.offset,
                     line: span.line,
                     col: span.col,
+                    len: ch.len_utf8(),
                 })
             }
         }
@@ -192,6 +198,7 @@ impl Parser {
                 position: t.span.offset,
                 line: t.span.line,
                 col: t.span.col,
+                len: 1,
             })
         }
     }
@@ -244,6 +251,7 @@ impl Parser {
                 position: self.peek().span.offset,
                 line: self.peek().span.line,
                 col: self.peek().span.col,
+                len: 1,
             }),
         }
     }
