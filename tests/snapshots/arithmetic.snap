@@ -1,0 +1,24 @@
+---
+source: tests/snapshots/arithmetic.rs
+expression: assert_snapshot
+input_file: tests/snapshots/arithmetic.rs
+---
+1 + 2 * 3
+---
+1 + 2 * 3
+===
+(1 + 2) * (3 - 4 / 2)
+---
+(1 + 2) * (3 - 4 / 2)
+===
+-1 + 2 * 3
+---
+0 - 1 + 2 * 3
+===
+let x = 1 + 2;
+let y = x * 3;
+y - x
+---
+let x = 1 + 2;
+let y = x * 3;
+y - x
