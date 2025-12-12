@@ -82,9 +82,8 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let caret = format!("{}^{}", red_bold.render(), reset);
 
     format!(
-        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{curl}{target}{reset}{post}\n{dim}└{reset}  {pad}{caret} {msg}",
+        "{hdr} error{reset}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{curl}{target}{reset}{post}\n{dim}└{reset}  {pad}{caret} {msg}",
         hdr = red_bold.render(),
-        msg = err.message,
         line = err.line,
         col = err.col,
         pre = underline.pre,
@@ -94,7 +93,8 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
         dim = dim.render(),
         reset = reset,
         pad = caret_pad,
-        caret = caret
+        caret = caret,
+        msg = err.message
     )
 }
 
