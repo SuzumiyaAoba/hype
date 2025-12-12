@@ -72,24 +72,29 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let underline = underline_slice(line_str, arrow_col, err.len.max(1));
 
     let red_bold = Style::new().fg_color(Some(AnsiColor::Red.into())).bold();
-    let red_underline = Style::new()
-        .fg_color(Some(AnsiColor::Red.into()))
-        .underline();
     let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     let reset = Reset.render();
 
+    // undercurl ANSI escape (CSI 4:3 m)
+    const UNDERCURL: &str = "\u{001b}[4:3m";
+
+    let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
+    let caret = format!("{}^{}", red_bold.render(), reset);
+
     format!(
-        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{hl}{target}{reset}{post}\n{dim}└{reset}  {msg}",
+        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{curl}{target}{reset}{post}\n{dim}└{reset}  {pad}{caret} {msg}",
         hdr = red_bold.render(),
         msg = err.message,
         line = err.line,
         col = err.col,
         pre = underline.pre,
-        hl = red_underline.render(),
         target = underline.target,
         post = underline.post,
+        curl = UNDERCURL,
         dim = dim.render(),
-        reset = reset
+        reset = reset,
+        pad = caret_pad,
+        caret = caret
     )
 }
 
