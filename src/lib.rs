@@ -1,4 +1,4 @@
-use std::fmt;
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
@@ -18,19 +18,12 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
+#[error("{message} at {position}")]
 pub struct ParseError {
     pub message: String,
     pub position: usize,
 }
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at {}", self.message, self.position)
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 #[derive(Debug, Clone, PartialEq)]
 enum Token {

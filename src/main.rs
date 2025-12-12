@@ -1,12 +1,15 @@
-use std::env;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about = "Hype arithmetic transpiler")]
+struct Args {
+    /// 式を文字列で指定
+    expr: String,
+}
 
 fn main() {
-    let expr = env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("usage: hype <expression>");
-        std::process::exit(1);
-    });
-
-    match hype::transpile(&expr) {
+    let args = Args::parse();
+    match hype::transpile(&args.expr) {
         Ok(js) => println!("{js}"),
         Err(e) => {
             eprintln!("error: {e}");
