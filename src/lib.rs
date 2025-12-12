@@ -60,6 +60,25 @@ pub fn transpile(input: &str) -> Result<String, ParseError> {
     Ok(render_js(&expr, 0))
 }
 
+/// エラーを行・列付きでUnicodeシンボルとともに整形する。
+pub fn format_error(input: &str, err: &ParseError) -> String {
+    let line_str = input
+        .lines()
+        .nth(err.line.saturating_sub(1))
+        .unwrap_or("");
+    let arrow_col = err.col.max(1);
+    let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
+
+    format!(
+        "┌─ error: {msg}\n│  at line {line}, col {col}\n│  {text}\n└─ {pad}^",
+        msg = err.message,
+        line = err.line,
+        col = err.col,
+        text = line_str,
+        pad = caret_pad
+    )
+}
+
 fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
     let mut chars = input.chars().peekable();
     let mut tokens = Vec::new();

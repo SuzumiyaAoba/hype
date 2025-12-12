@@ -12,7 +12,7 @@ fn main() {
     match hype::transpile(&args.expr) {
         Ok(js) => println!("{js}"),
         Err(e) => {
-            eprintln!("error: {e}");
+            eprintln!("{}", hype::format_error(&args.expr, &e));
             std::process::exit(1);
         }
     }
