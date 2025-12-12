@@ -69,27 +69,71 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
         .nth(err.line.saturating_sub(1))
         .unwrap_or("");
     let arrow_col = err.col.max(1);
-    let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
-    let wave_len = err.len.max(1);
-    // undercurl風の波線。1コードポイント幅を len に合わせて繰り返す。
-    let wave = "﹏".repeat(wave_len);
+    let underline = underline_slice(line_str, arrow_col, err.len.max(1));
 
     let red_bold = Style::new().fg_color(Some(AnsiColor::Red.into())).bold();
+    let red_underline = Style::new()
+        .fg_color(Some(AnsiColor::Red.into()))
+        .underline();
     let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     let reset = Reset.render();
 
     format!(
-        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}└{reset}  {pad}{wave_col} {msg}",
+        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{hl}{target}{reset}{post}\n{dim}└{reset}  {msg}",
         hdr = red_bold.render(),
         msg = err.message,
         line = err.line,
         col = err.col,
-        text = line_str,
-        pad = caret_pad,
-        wave_col = format!("{}{}{}", red_bold.render(), wave, reset),
+        pre = underline.pre,
+        hl = red_underline.render(),
+        target = underline.target,
+        post = underline.post,
         dim = dim.render(),
         reset = reset
     )
+}
+
+struct Underline<'a> {
+    pre: &'a str,
+    target: &'a str,
+    post: &'a str,
+}
+
+fn underline_slice<'a>(line: &'a str, col: usize, len: usize) -> Underline<'a> {
+    let mut start_byte = line.len();
+    let mut end_byte = line.len();
+    let mut current_col = 1usize;
+
+    for (i, _) in line.char_indices() {
+        if current_col == col {
+            start_byte = i;
+            break;
+        }
+        current_col += 1;
+    }
+
+    if start_byte == line.len() && col == 1 {
+        start_byte = 0;
+    }
+
+    // Advance len chars from start_byte
+    let mut count = 0usize;
+    for (i, _) in line[start_byte..].char_indices() {
+        if count == len {
+            end_byte = start_byte + i;
+            break;
+        }
+        count += 1;
+    }
+    if count < len {
+        end_byte = line.len();
+    }
+
+    let pre = &line[..start_byte.min(line.len())];
+    let target = &line[start_byte.min(line.len())..end_byte.min(line.len())];
+    let post = &line[end_byte.min(line.len())..];
+
+    Underline { pre, target, post }
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
