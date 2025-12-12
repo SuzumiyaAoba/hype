@@ -75,8 +75,8 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     let reset = Reset.render();
 
-    // undercurl ANSI escape (CSI 4:3 m)
-    const UNDERCURL: &str = "\u{001b}[4:3m";
+    // undercurl ANSI escape (CSI 4:3 m) with red color
+    const UNDERCURL_RED: &str = "\u{001b}[31;4:3m";
 
     let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
     let caret = format!("{}^{}", red_bold.render(), reset);
@@ -90,7 +90,7 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
         pre = underline.pre,
         target = underline.target,
         post = underline.post,
-        curl = UNDERCURL,
+        curl = UNDERCURL_RED,
         dim = dim.render(),
         reset = reset,
         pad = caret_pad,
