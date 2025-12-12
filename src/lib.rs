@@ -82,7 +82,7 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let caret = format!("{}^{}", red_bold.render(), reset);
 
     format!(
-        "{hdr} error{reset}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{curl}{target}{reset}{post}\n{dim}└{reset}  {pad}{caret} {msg}",
+        "{hdr} error{reset}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {pre}{curl}{target}{reset}{post}\n{dim}└{reset}  {pad}{caret}\n   {pad}{msg}",
         hdr = red_bold.render(),
         line = err.line,
         col = err.col,
