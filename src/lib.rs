@@ -1,3 +1,4 @@
+use anstyle::{AnsiColor, Reset, Style};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,13 +70,21 @@ pub fn format_error(input: &str, err: &ParseError) -> String {
     let arrow_col = err.col.max(1);
     let caret_pad = " ".repeat(arrow_col.saturating_sub(1));
 
+    let red_bold = Style::new().fg_color(Some(AnsiColor::Red.into())).bold();
+    let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
+    let reset = Reset.render();
+
     format!(
-        "┌─ error: {msg}\n│  at line {line}, col {col}\n│  {text}\n└─ {pad}^",
+        "{hdr} error:{reset} {msg}\n{dim}│{reset}  at line {line}, col {col}\n{dim}│{reset}  {text}\n{dim}└─{reset} {pad}{carat}",
+        hdr = red_bold.render(),
         msg = err.message,
         line = err.line,
         col = err.col,
         text = line_str,
-        pad = caret_pad
+        pad = caret_pad,
+        carat = format!("{}^{}", red_bold.render(), reset),
+        dim = dim.render(),
+        reset = reset
     )
 }
 
