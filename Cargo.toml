@@ -1,0 +1,10 @@
+[package]
+name = "hype"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+thiserror = "1.0.64"
+anstyle = "1.0.13"
+logos = "0.14.3"
