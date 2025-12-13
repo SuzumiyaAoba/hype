@@ -9,11 +9,20 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
+    Bool(bool),
     Var(String),
     Str(String),
     Call {
@@ -73,6 +82,22 @@ enum Tok {
     Star,
     #[token("/")]
     Slash,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    BangEq,
+    #[token("<=")]
+    LessEq,
+    #[token(">=")]
+    GreaterEq,
+    #[token("<")]
+    Less,
+    #[token(">")]
+    Greater,
+    #[token("&&")]
+    AndAnd,
+    #[token("||")]
+    OrOr,
     #[token("(")]
     LParen,
     #[token(")")]
@@ -89,6 +114,10 @@ enum Tok {
     Let,
     #[token("fn")]
     Fn,
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
     #[token(":")]
     Colon,
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
@@ -347,6 +376,14 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Number(value))
             }
+            Tok::True => {
+                self.advance();
+                Ok(Expr::Bool(true))
+            }
+            Tok::False => {
+                self.advance();
+                Ok(Expr::Bool(false))
+            }
             Tok::Str(raw) => {
                 let inner = raw.trim_matches('"').to_string();
                 self.advance();
@@ -355,12 +392,31 @@ impl Parser {
             Tok::Ident(name) => {
                 let n = name.clone();
                 self.advance();
-                Ok(Expr::Var(n))
+                if matches!(self.peek().kind, Tok::LParen) {
+                    // function call
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+                    if !matches!(self.peek().kind, Tok::RParen) {
+                        loop {
+                            let arg = self.parse_expression(0)?;
+                            args.push(arg);
+                            if matches!(self.peek().kind, Tok::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect(Tok::RParen)?;
+                    Ok(Expr::Call { callee: n, args })
+                } else {
+                    Ok(Expr::Var(n))
+                }
             }
             Tok::Minus => {
                 // unary minus
                 self.advance();
-                let expr = self.parse_expression(3)?;
+                let expr = self.parse_expression(7)?;
                 Ok(Expr::Binary {
                     op: BinOp::Sub,
                     left: Box::new(Expr::Number(0.0)),
@@ -382,13 +438,50 @@ impl Parser {
     }
 
     fn current_binop(&self) -> Option<(BinOp, u8)> {
-        match self.peek().kind {
-            Tok::Plus => Some((BinOp::Add, 1)),
-            Tok::Minus => Some((BinOp::Sub, 1)),
-            Tok::Star => Some((BinOp::Mul, 2)),
-            Tok::Slash => Some((BinOp::Div, 2)),
+        let op = match self.peek().kind {
+            Tok::OrOr => Some(BinOp::Or),
+            Tok::AndAnd => Some(BinOp::And),
+            Tok::EqEq => Some(BinOp::Eq),
+            Tok::BangEq => Some(BinOp::Ne),
+            Tok::Less => Some(BinOp::Lt),
+            Tok::Greater => Some(BinOp::Gt),
+            Tok::LessEq => Some(BinOp::Le),
+            Tok::GreaterEq => Some(BinOp::Ge),
+            Tok::Plus => Some(BinOp::Add),
+            Tok::Minus => Some(BinOp::Sub),
+            Tok::Star => Some(BinOp::Mul),
+            Tok::Slash => Some(BinOp::Div),
             _ => None,
-        }
+        }?;
+        Some((op.clone(), binop_precedence(&op)))
+    }
+}
+
+fn binop_precedence(op: &BinOp) -> u8 {
+    match op {
+        BinOp::Or => 1,
+        BinOp::And => 2,
+        BinOp::Eq | BinOp::Ne => 3,
+        BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => 4,
+        BinOp::Add | BinOp::Sub => 5,
+        BinOp::Mul | BinOp::Div => 6,
+    }
+}
+
+fn binop_symbol(op: &BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Eq => "==",
+        BinOp::Ne => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::Le => "<=",
+        BinOp::Ge => ">=",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
     }
 }
 
@@ -401,6 +494,7 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
                 format!("{}", n)
             }
         }
+        Expr::Bool(b) => format!("{b}"),
         Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
         Expr::Var(name) => name.clone(),
         Expr::Call { callee, args } => {
@@ -408,16 +502,8 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
             format!("{callee}({})", rendered_args.join(", "))
         }
         Expr::Binary { op, left, right } => {
-            let prec = match op {
-                BinOp::Add | BinOp::Sub => 1,
-                BinOp::Mul | BinOp::Div => 2,
-            };
-            let op_str = match op {
-                BinOp::Add => "+",
-                BinOp::Sub => "-",
-                BinOp::Mul => "*",
-                BinOp::Div => "/",
-            };
+            let prec = binop_precedence(op);
+            let op_str = binop_symbol(op);
             let l = render_js(left, prec);
             let r = render_js(right, prec);
             let expr_str = format!("{l} {op_str} {r}");
@@ -645,13 +731,14 @@ fn type_of_expr(
 ) -> Result<Type, ParseError> {
     match expr {
         Expr::Number(_) => Ok(Type::Number),
+        Expr::Bool(_) => Ok(Type::Bool),
         Expr::Str(_) => Ok(Type::String),
         Expr::Var(name) => vars.get(name).cloned().ok_or_else(|| ParseError {
             message: format!("unbound variable '{}'", name),
             span: 0..0,
             source: source.to_string(),
         }),
-        Expr::Binary { op, left, right } => {
+                Expr::Binary { op, left, right } => {
             let lt = type_of_expr(left, vars, fns, source)?;
             let rt = type_of_expr(right, vars, fns, source)?;
             match op {
@@ -674,6 +761,39 @@ fn type_of_expr(
                     } else {
                         Err(ParseError {
                             message: "numeric operator requires Number".into(),
+                            span: 0..0,
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                BinOp::Eq | BinOp::Ne => {
+                    if lt == rt {
+                        Ok(Type::Bool)
+                    } else {
+                        Err(ParseError {
+                            message: "equality requires operands of the same type".into(),
+                            span: 0..0,
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                    if lt == Type::Number && rt == Type::Number {
+                        Ok(Type::Bool)
+                    } else {
+                        Err(ParseError {
+                            message: "comparison requires Number operands".into(),
+                            span: 0..0,
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                BinOp::And | BinOp::Or => {
+                    if lt == Type::Bool && rt == Type::Bool {
+                        Ok(Type::Bool)
+                    } else {
+                        Err(ParseError {
+                            message: "logical operator requires Bool".into(),
                             span: 0..0,
                             source: source.to_string(),
                         })
@@ -749,8 +869,24 @@ mod tests {
     }
 
     #[test]
+    fn bool_literals_and_logic() {
+        assert_eq!(js("true && false || true"), "true && false || true");
+    }
+
+    #[test]
+    fn comparisons_and_equality() {
+        assert_eq!(js("1 < 2 == true"), "1 < 2 == true");
+    }
+
+    #[test]
     fn lets_and_vars() {
         let out = js("let x: Number = 1+2; let y: Number = x*3; y - x");
         assert_eq!(out, "let x = 1 + 2;\nlet y = x * 3;\ny - x");
+    }
+
+    #[test]
+    fn function_call_with_bool_return() {
+        let out = js("fn eq(a: Number, b: Number): Bool = a == b; eq(1, 1)");
+        assert_eq!(out, "function eq(a, b) { return a == b; }\neq(1, 1)");
     }
 }
