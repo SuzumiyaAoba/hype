@@ -5,8 +5,12 @@ pub enum Type {
     Number,
     String,
     Bool,
-    Unknown,
+    Var(TypeVarId),
+    Fun(Vec<Type>, Box<Type>),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeVarId(pub u32);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
@@ -73,12 +77,18 @@ pub struct FnSig {
     pub ret: Type,
 }
 
+#[derive(Debug, Clone)]
+pub struct Scheme {
+    pub vars: Vec<TypeVarId>,
+    pub ty: Type,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let { name: String, ty: Option<Type>, expr: Expr },
     Fn {
         name: String,
-        params: Vec<(String, Type)>,
+        params: Vec<(String, Option<Type>)>,
         ret: Option<Type>,
         body: Expr,
     },

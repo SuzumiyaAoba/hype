@@ -94,19 +94,25 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
             Stmt::Let { name, ty, expr } => {
                 let t = ty
                     .as_ref()
-                    .or_else(|| env.vars.get(name))
-                    .unwrap_or(&Type::Unknown);
+                    .or_else(|| env.schemes.get(name).map(|s| &s.ty))
+                    .unwrap_or(&Type::Var(crate::ast::TypeVarId(0)));
                 let js = render_js(expr, 0);
                 lines.push(format!("let {name}: {} = {js};", type_name(t)));
             }
             Stmt::Fn { name, params, ret, body } => {
                 let ret_ty = ret
                     .as_ref()
-                    .or_else(|| env.fns.get(name).map(|f| &f.ret))
-                    .unwrap_or(&Type::Unknown);
+                    .or_else(|| env.schemes.get(name).map(|s| &s.ty))
+                    .unwrap_or(&Type::Var(crate::ast::TypeVarId(0)));
                 let params_str = params
                     .iter()
-                    .map(|(p, t)| format!("{p}: {}", type_name(t)))
+                    .map(|(p, t)| {
+                        if let Some(t) = t {
+                            format!("{p}: {}", type_name(t))
+                        } else {
+                            format!("{p}: {}", type_name(&Type::Var(crate::ast::TypeVarId(0))))
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let body_js = render_js(body, 0);
