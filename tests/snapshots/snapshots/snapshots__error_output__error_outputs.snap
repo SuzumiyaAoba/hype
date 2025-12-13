@@ -1,0 +1,28 @@
+---
+source: tests/snapshots/error_output.rs
+assertion_line: 28
+expression: out
+---
+x
+---
+[1m[31m error[0m
+[90m│[0m  at line 1, col 1
+[90m│[0m  [31;4:3mx[0m
+[90m└[0m  [1m[31m^[0m
+   unbound variable 'x'
+===
+fn f(a: Number): Number = a; f(true)
+---
+[1m[31m error[0m
+[90m│[0m  at line 1, col 32
+[90m│[0m  fn f(a: Number): Number = a; f([31;4:3mtrue[0m)
+[90m└[0m                                 [1m[31m^[0m
+                                  type mismatch in argument: expected Number, found Bool
+===
+1 + true
+---
+[1m[31m error[0m
+[90m│[0m  at line 1, col 1
+[90m│[0m  [31;4:3m1 + true[0m
+[90m└[0m  [1m[31m^[0m
+   type mismatch for '+'
