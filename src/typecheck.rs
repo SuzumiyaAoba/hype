@@ -1,22 +1,118 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use crate::ast::{Expr, ExprKind, FnSig, MatchArm, Pattern, Stmt, Type};
+use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Scheme, Stmt, Type, TypeVarId};
 use crate::debug::DebugInfo;
 use crate::error::ParseError;
 
 #[derive(Debug, Clone, Default)]
 pub struct TypeEnv {
-    pub vars: HashMap<String, Type>,
-    pub fns: HashMap<String, FnSig>,
+    pub schemes: HashMap<String, Scheme>,
 }
 
-pub fn type_name(t: &Type) -> &'static str {
+pub fn type_name(t: &Type) -> String {
     match t {
-        Type::Number => "Number",
-        Type::String => "String",
-        Type::Bool => "Bool",
-        Type::Unknown => "Unknown",
+        Type::Number => "Number".into(),
+        Type::String => "String".into(),
+        Type::Bool => "Bool".into(),
+        Type::Var(tv) => format!("t{}", tv.0),
+        Type::Fun(params, ret) => {
+            let ps: Vec<String> = params.iter().map(type_name).collect();
+            format!("({}) -> {}", ps.join(", "), type_name(ret))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Subst(HashMap<TypeVarId, Type>);
+
+impl Subst {
+    fn new() -> Self {
+        Subst(HashMap::new())
+    }
+
+    fn apply(&self, t: &Type) -> Type {
+        match t {
+            Type::Var(tv) => self.0.get(tv).cloned().unwrap_or(Type::Var(tv.clone())),
+            Type::Fun(ps, r) => Type::Fun(ps.iter().map(|p| self.apply(p)).collect(), Box::new(self.apply(r))),
+            other => other.clone(),
+        }
+    }
+
+    fn compose(&self, other: &Subst) -> Subst {
+        let mut map = other
+            .0
+            .iter()
+            .map(|(k, v)| (k.clone(), self.apply(v)))
+            .collect::<HashMap<_, _>>();
+        for (k, v) in self.0.iter() {
+            map.insert(k.clone(), v.clone());
+        }
+        Subst(map)
+    }
+}
+
+fn free_type_vars(t: &Type, acc: &mut HashSet<TypeVarId>) {
+    match t {
+        Type::Var(tv) => {
+            acc.insert(tv.clone());
+        }
+        Type::Fun(ps, r) => {
+            for p in ps {
+                free_type_vars(p, acc);
+            }
+            free_type_vars(r, acc);
+        }
+        _ => {}
+    }
+}
+
+fn free_vars_scheme(s: &Scheme) -> HashSet<TypeVarId> {
+    let mut set = HashSet::new();
+    free_type_vars(&s.ty, &mut set);
+    for v in &s.vars {
+        set.remove(v);
+    }
+    set
+}
+
+fn free_vars_env(env: &TypeEnv) -> HashSet<TypeVarId> {
+    let mut set = HashSet::new();
+    for scheme in env.schemes.values() {
+        set.extend(free_vars_scheme(scheme));
+    }
+    set
+}
+
+fn generalize(env: &TypeEnv, t: &Type) -> Scheme {
+    let mut ftv = HashSet::new();
+    free_type_vars(t, &mut ftv);
+    let env_ftv = free_vars_env(env);
+    ftv.retain(|v| !env_ftv.contains(v));
+    Scheme {
+        vars: ftv.into_iter().collect(),
+        ty: t.clone(),
+    }
+}
+
+fn instantiate(s: &Scheme, state: &mut InferState) -> Type {
+    let mut subst = Subst::new();
+    for v in &s.vars {
+        subst.0.insert(v.clone(), state.fresh_var());
+    }
+    subst.apply(&s.ty)
+}
+
+#[derive(Default)]
+struct InferState {
+    counter: u32,
+}
+
+impl InferState {
+    fn fresh_var(&mut self) -> Type {
+        let id = self.counter;
+        self.counter += 1;
+        Type::Var(TypeVarId(id))
     }
 }
 
@@ -25,116 +121,346 @@ pub(crate) fn typecheck(
     source: &str,
     mut debug: Option<&mut DebugInfo>,
 ) -> Result<TypeEnv, ParseError> {
-    let mut fns: HashMap<String, FnSig> = HashMap::new();
-    for stmt in stmts {
-        if let Stmt::Fn { name, params, ret, .. } = stmt {
-            if fns.contains_key(name) {
-                return Err(ParseError {
-                    message: format!("duplicate function '{}'", name),
-                    span: 0..0,
-                    source: source.to_string(),
-                });
-            }
-            let param_tys = params.iter().map(|(_, t)| t.clone()).collect();
-            fns.insert(
-                name.clone(),
-                FnSig {
-                    params: param_tys,
-                    ret: ret.clone().unwrap_or(Type::Unknown),
-                },
-            );
-            crate::debug::log_debug(
-                debug.as_deref_mut(),
-                || {
-                    format!(
-                        "fn signature collected: {name}({}) -> {:?}",
-                        params
-                            .iter()
-                            .map(|(p, t)| format!("{p}: {:?}", t))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        ret.as_ref().unwrap_or(&Type::Unknown)
-                    )
-                },
-            );
-        }
-    }
+    let mut env = TypeEnv::default();
+    let mut state = InferState::default();
 
-    let mut vars: HashMap<String, Type> = HashMap::new();
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, ty, expr } => {
-                let expr_ty = type_of_expr(expr, &vars, &fns, source, debug.as_deref_mut())?;
-                if let Some(t) = ty {
-                    unify_or_error(t, &expr_ty, source, "type mismatch for let binding", &expr.span)?;
-                    vars.insert(name.clone(), t.clone());
-                    crate::debug::log_debug(
-                        debug.as_deref_mut(),
-                        || format!("let {name}: {:?} = (checked as {:?})", t, expr_ty),
-                    );
+                let (t, s) = infer_expr(expr, &env, &mut state, source)?;
+                let t_app = s.apply(&t);
+                if let Some(annot) = ty {
+                    let ann = s.apply(annot);
+                    unify(&t_app, &ann, &expr.span, source)?;
+                    env.schemes.insert(name.clone(), generalize(&env, &ann));
+                    crate::debug::log_debug(debug.as_deref_mut(), || {
+                        format!("let {name} annotated as {:?}", ann)
+                    });
                 } else {
-                    crate::debug::log_debug(
-                        debug.as_deref_mut(),
-                        || format!("let {name} inferred as {:?}", expr_ty),
-                    );
-                    vars.insert(name.clone(), expr_ty);
+                    env.schemes.insert(name.clone(), generalize(&env, &t_app));
+                    crate::debug::log_debug(debug.as_deref_mut(), || format!("let {name} inferred as {:?}", t_app));
                 }
             }
             Stmt::Fn { name, params, ret, body } => {
-                let mut local = vars.clone();
+                let mut local = env.clone();
+                let mut param_types = Vec::new();
                 for (pname, pty) in params {
-                    local.insert(pname.clone(), pty.clone());
+                    let pt = if let Some(t) = pty {
+                        t.clone()
+                    } else {
+                        state.fresh_var()
+                    };
+                    param_types.push(pt.clone());
+                    local.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt });
                 }
-                let body_ty = type_of_expr(body, &local, &fns, source, debug.as_deref_mut())?;
-                let sig = fns.get_mut(name).expect("fn sig exists");
-                if let Some(r) = ret {
-                    unify_or_error(r, &body_ty, source, "type mismatch in function body", &body.span)?;
-                    sig.ret = r.clone();
-                    crate::debug::log_debug(
-                        debug.as_deref_mut(),
-                        || format!("fn {name} return checked as {:?} (body {:?})", r, body_ty),
-                    );
+                let (body_ty, s_body) = infer_expr(body, &local, &mut state, source)?;
+                let body_ty = s_body.apply(&body_ty);
+                let mut ret_ty = if let Some(r) = ret {
+                    let ann = s_body.apply(r);
+                    unify(&body_ty, &ann, &body.span, source)?;
+                    ann
                 } else {
-                    sig.ret = body_ty;
-                    crate::debug::log_debug(
-                        debug.as_deref_mut(),
-                        || format!("fn {name} return inferred as {:?}", sig.ret),
-                    );
-                }
+                    body_ty
+                };
+                param_types = param_types.into_iter().map(|p| s_body.apply(&p)).collect();
+                ret_ty = s_body.apply(&ret_ty);
+                let fn_ty = Type::Fun(param_types, Box::new(ret_ty.clone()));
+                env.schemes.insert(name.clone(), generalize(&env, &fn_ty));
+                crate::debug::log_debug(debug.as_deref_mut(), || format!("fn {name} inferred as {:?}", fn_ty));
             }
             Stmt::Expr(expr) => {
-                let _ = type_of_expr(expr, &vars, &fns, source, debug.as_deref_mut())?;
+                let _ = infer_expr(expr, &env, &mut state, source)?;
             }
         }
     }
-    Ok(TypeEnv { vars, fns })
+
+    Ok(env)
 }
 
-fn unify_or_error(
-    expected: &Type,
-    found: &Type,
+fn infer_expr(
+    expr: &Expr,
+    env: &TypeEnv,
+    state: &mut InferState,
     source: &str,
-    msg: &str,
-    span: &Range<usize>,
-) -> Result<(), ParseError> {
-    if let Some(_) = unify(expected, found) {
-        Ok(())
-    } else {
-        Err(ParseError {
-            message: format!("{msg}: expected {:?}, found {:?}", expected, found),
-            span: span.clone(),
-            source: source.to_string(),
-        })
+) -> Result<(Type, Subst), ParseError> {
+    match &expr.kind {
+        ExprKind::Number(_) => Ok((Type::Number, Subst::new())),
+        ExprKind::Bool(_) => Ok((Type::Bool, Subst::new())),
+        ExprKind::Str(_) => Ok((Type::String, Subst::new())),
+        ExprKind::Var { name } => {
+            if let Some(scheme) = env.schemes.get(name) {
+                Ok((instantiate(scheme, state), Subst::new()))
+            } else {
+                Err(ParseError {
+                    message: format!("unbound variable '{}'", name),
+                    span: expr.span.clone(),
+                    source: source.to_string(),
+                })
+            }
+        }
+        ExprKind::Binary { op, left, right } => {
+            let (lt, ls) = infer_expr(left, env, state, source)?;
+            let env_l = apply_env(env, &ls);
+            let (rt, rs) = infer_expr(right, &env_l, state, source)?;
+            let s = ls.compose(&rs);
+            let lt = s.apply(&lt);
+            let rt = s.apply(&rt);
+            match op {
+                crate::ast::BinOp::Add => {
+                    let num = Type::Number;
+                    let str_t = Type::String;
+                    if let Ok(s1) = unify(&lt, &num, &expr.span, source) {
+                        let s2 = unify(&rt, &num, &expr.span, source)?;
+                        Ok((Type::Number, s.compose(&s1).compose(&s2)))
+                    } else if let Ok(s1) = unify(&lt, &str_t, &expr.span, source) {
+                        let s2 = unify(&rt, &str_t, &expr.span, source)?;
+                        Ok((Type::String, s.compose(&s1).compose(&s2)))
+                    } else {
+                        Err(ParseError {
+                            message: "type mismatch for '+'".into(),
+                            span: expr.span.clone(),
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                crate::ast::BinOp::Sub | crate::ast::BinOp::Mul | crate::ast::BinOp::Div => {
+                    let num = Type::Number;
+                    let s1 = unify(&lt, &num, &expr.span, source)?;
+                    let s2 = unify(&rt, &num, &expr.span, source)?;
+                    Ok((Type::Number, s.compose(&s1).compose(&s2)))
+                }
+                crate::ast::BinOp::Eq | crate::ast::BinOp::Ne => {
+                    let s1 = unify(&lt, &rt, &expr.span, source)?;
+                    Ok((Type::Bool, s.compose(&s1)))
+                }
+                crate::ast::BinOp::Lt
+                | crate::ast::BinOp::Gt
+                | crate::ast::BinOp::Le
+                | crate::ast::BinOp::Ge => {
+                    let num = Type::Number;
+                    let s1 = unify(&lt, &num, &expr.span, source)?;
+                    let s2 = unify(&rt, &num, &expr.span, source)?;
+                    Ok((Type::Bool, s.compose(&s1).compose(&s2)))
+                }
+                crate::ast::BinOp::And | crate::ast::BinOp::Or => {
+                    let b = Type::Bool;
+                    let s1 = unify(&lt, &b, &expr.span, source)?;
+                    let s2 = unify(&rt, &b, &expr.span, source)?;
+                    Ok((Type::Bool, s.compose(&s1).compose(&s2)))
+                }
+            }
+        }
+        ExprKind::Call { callee, args, callee_span } => {
+            let mut s = Subst::new();
+            let mut arg_types = Vec::new();
+            for arg in args {
+                let (t, st) = infer_expr(arg, &apply_env(env, &s), state, source)?;
+                s = s.compose(&st);
+                arg_types.push(s.apply(&t));
+            }
+            let ret_ty = state.fresh_var();
+            let fn_ty = Type::Fun(arg_types.clone(), Box::new(ret_ty.clone()));
+            let callee_ty = if let Some(sch) = env.schemes.get(callee) {
+                instantiate(sch, state)
+            } else {
+                return Err(ParseError {
+                    message: format!("unknown function '{}'", callee),
+                    span: callee_span.clone(),
+                    source: source.to_string(),
+                });
+            };
+            let su = unify(&s.apply(&callee_ty), &fn_ty, &expr.span, source)?;
+            s = s.compose(&su);
+            Ok((s.apply(&ret_ty), s))
+        }
+        ExprKind::Block(stmts) => infer_block(stmts, env, state, source, &expr.span),
+        ExprKind::Match { expr, arms } => infer_match(expr, arms, env, state, source, &expr.span),
     }
 }
 
-fn unify(a: &Type, b: &Type) -> Option<Type> {
+fn infer_block(
+    stmts: &[Stmt],
+    env: &TypeEnv,
+    state: &mut InferState,
+    source: &str,
+    span: &Range<usize>,
+) -> Result<(Type, Subst), ParseError> {
+    if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
+        return Err(ParseError {
+            message: "block must end with expression".into(),
+            span: span.clone(),
+            source: source.to_string(),
+        });
+    }
+    let mut s = Subst::new();
+    let mut local_env = env.clone();
+    let mut last_ty = None;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, ty, expr } => {
+                let (t, st) = infer_expr(expr, &apply_env(&local_env, &s), state, source)?;
+                s = s.compose(&st);
+                let t_app = s.apply(&t);
+                if let Some(ann) = ty {
+                    let ann_t = s.apply(ann);
+                    unify(&t_app, &ann_t, &expr.span, source)?;
+                    local_env
+                        .schemes
+                        .insert(name.clone(), generalize(&apply_env(&local_env, &s), &ann_t));
+                } else {
+                    local_env
+                        .schemes
+                        .insert(name.clone(), generalize(&apply_env(&local_env, &s), &t_app));
+                }
+            }
+            Stmt::Fn { name, params, ret, body } => {
+                let mut env_fn = apply_env(&local_env, &s);
+                let mut param_types = Vec::new();
+                for (pname, pty) in params {
+                    let pt = if let Some(t) = pty {
+                        s.apply(t)
+                    } else {
+                        state.fresh_var()
+                    };
+                    param_types.push(pt.clone());
+                    env_fn.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt });
+                }
+                let (body_ty, sb) = infer_expr(body, &env_fn, state, source)?;
+                s = s.compose(&sb);
+                let mut ret_ty = s.apply(&body_ty);
+                if let Some(r) = ret {
+                    let ann = s.apply(r);
+                    unify(&ret_ty, &ann, &body.span, source)?;
+                    ret_ty = ann;
+                }
+                let fn_ty = Type::Fun(
+                    param_types.into_iter().map(|p| s.apply(&p)).collect(),
+                    Box::new(ret_ty),
+                );
+                local_env
+                    .schemes
+                    .insert(name.clone(), generalize(&apply_env(&local_env, &s), &fn_ty));
+            }
+            Stmt::Expr(expr) => {
+                let (t, st) = infer_expr(expr, &apply_env(&local_env, &s), state, source)?;
+                s = s.compose(&st);
+                last_ty = Some(s.apply(&t));
+            }
+        }
+    }
+    last_ty
+        .map(|t| (t, s))
+        .ok_or_else(|| ParseError {
+            message: "block must end with expression".into(),
+            span: span.clone(),
+            source: source.to_string(),
+        })
+}
+
+fn infer_match(
+    expr: &Expr,
+    arms: &[MatchArm],
+    env: &TypeEnv,
+    state: &mut InferState,
+    source: &str,
+    span: &Range<usize>,
+) -> Result<(Type, Subst), ParseError> {
+    if arms.is_empty() {
+        return Err(ParseError {
+            message: "match requires at least one arm".into(),
+            span: span.clone(),
+            source: source.to_string(),
+        });
+    }
+    let (scrut_ty, s_scrut) = infer_expr(expr, env, state, source)?;
+    let mut s = s_scrut;
+    let mut result_ty = None;
+    for arm in arms {
+        let env_arm = apply_env(env, &s);
+        let scrut = s.apply(&scrut_ty);
+        ensure_pattern_matches(&arm.pat, &scrut, source, span)?;
+        let (arm_ty, sa) = infer_expr(&arm.expr, &env_arm, state, source)?;
+        s = s.compose(&sa);
+        let arm_ty = s.apply(&arm_ty);
+        if let Some(prev) = result_ty {
+            let su = unify(&prev, &arm_ty, &arm.expr.span, source)?;
+            s = s.compose(&su);
+            result_ty = Some(s.apply(&prev));
+        } else {
+            result_ty = Some(arm_ty);
+        }
+    }
+    result_ty
+        .map(|t| (t, s))
+        .ok_or_else(|| ParseError {
+            message: "match requires at least one arm".into(),
+            span: span.clone(),
+            source: source.to_string(),
+        })
+}
+
+fn apply_env(env: &TypeEnv, s: &Subst) -> TypeEnv {
+    let mut new_env = env.clone();
+    for scheme in new_env.schemes.values_mut() {
+        scheme.ty = s.apply(&scheme.ty);
+    }
+    new_env
+}
+
+fn unify(a: &Type, b: &Type, span: &Range<usize>, source: &str) -> Result<Subst, ParseError> {
     match (a, b) {
-        (Type::Unknown, t) | (t, Type::Unknown) => Some(t.clone()),
-        (Type::Number, Type::Number) => Some(Type::Number),
-        (Type::String, Type::String) => Some(Type::String),
-        (Type::Bool, Type::Bool) => Some(Type::Bool),
-        _ => None,
+        (Type::Fun(pa, ra), Type::Fun(pb, rb)) => {
+            if pa.len() != pb.len() {
+                return Err(ParseError {
+                    message: "arity mismatch in function type".into(),
+                    span: span.clone(),
+                    source: source.to_string(),
+                });
+            }
+            let mut subst = Subst::new();
+            for (ta, tb) in pa.iter().zip(pb.iter()) {
+                let su = unify(&subst.apply(ta), &subst.apply(tb), span, source)?;
+                subst = subst.compose(&su);
+            }
+            let su = unify(&subst.apply(ra), &subst.apply(rb), span, source)?;
+            Ok(subst.compose(&su))
+        }
+        (Type::Var(v), t) => bind(v, t, span, source),
+        (t, Type::Var(v)) => bind(v, t, span, source),
+        (Type::Number, Type::Number) => Ok(Subst::new()),
+        (Type::String, Type::String) => Ok(Subst::new()),
+        (Type::Bool, Type::Bool) => Ok(Subst::new()),
+        _ => Err(ParseError {
+            message: format!("type mismatch: {:?} vs {:?}", a, b),
+            span: span.clone(),
+            source: source.to_string(),
+        }),
+    }
+}
+
+fn bind(var: &TypeVarId, t: &Type, span: &Range<usize>, source: &str) -> Result<Subst, ParseError> {
+    if let Type::Var(v2) = t {
+        if var == v2 {
+            return Ok(Subst::new());
+        }
+    }
+    if occurs(var, t) {
+        return Err(ParseError {
+            message: "occurs check failed".into(),
+            span: span.clone(),
+            source: source.to_string(),
+        });
+    }
+    let mut s = Subst::new();
+    s.0.insert(var.clone(), t.clone());
+    Ok(s)
+}
+
+fn occurs(var: &TypeVarId, t: &Type) -> bool {
+    match t {
+        Type::Var(v) => v == var,
+        Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
+        _ => false,
     }
 }
 
@@ -146,7 +472,6 @@ fn ensure_pattern_matches(
 ) -> Result<(), ParseError> {
     let ok = match pat {
         Pattern::Wildcard => true,
-        _ if matches!(ty, Type::Unknown) => true,
         Pattern::Bool(_) => matches!(ty, Type::Bool),
         Pattern::Number(_) => matches!(ty, Type::Number),
         Pattern::Str(_) => matches!(ty, Type::String),
@@ -159,204 +484,5 @@ fn ensure_pattern_matches(
             span: span.clone(),
             source: source.to_string(),
         })
-    }
-}
-
-fn type_of_match(
-    expr: &Expr,
-    arms: &[MatchArm],
-    vars: &HashMap<String, Type>,
-    fns: &HashMap<String, FnSig>,
-    source: &str,
-    mut debug: Option<&mut DebugInfo>,
-    span: &Range<usize>,
-) -> Result<Type, ParseError> {
-    if arms.is_empty() {
-        return Err(ParseError {
-            message: "match requires at least one arm".into(),
-            span: span.clone(),
-            source: source.to_string(),
-        });
-    }
-
-    let scrutinee_ty = type_of_expr(expr, vars, fns, source, debug.as_deref_mut())?;
-    let mut result_ty: Option<Type> = None;
-    for arm in arms {
-        ensure_pattern_matches(&arm.pat, &scrutinee_ty, source, span)?;
-        let ty = type_of_expr(&arm.expr, vars, fns, source, debug.as_deref_mut())?;
-        if let Some(prev) = &result_ty {
-            if let Some(u) = unify(prev, &ty) {
-                result_ty = Some(u);
-            } else {
-                return Err(ParseError {
-                    message: format!(
-                        "match arms must have the same type, found {:?} and {:?}",
-                        prev, ty
-                    ),
-                    span: arm.expr.span.clone(),
-                    source: source.to_string(),
-                });
-            }
-        } else {
-            result_ty = Some(ty);
-        }
-    }
-
-    result_ty.ok_or_else(|| ParseError {
-        message: "match requires at least one arm".into(),
-        span: span.clone(),
-        source: source.to_string(),
-    })
-}
-
-fn type_of_block(
-    stmts: &[Stmt],
-    vars: &HashMap<String, Type>,
-    fns: &HashMap<String, FnSig>,
-    source: &str,
-    mut debug: Option<&mut DebugInfo>,
-    span: &Range<usize>,
-) -> Result<Type, ParseError> {
-    if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
-        return Err(ParseError {
-            message: "block must end with expression".into(),
-            span: span.clone(),
-            source: source.to_string(),
-        });
-    }
-    let mut local = vars.clone();
-    let mut last_ty = None;
-    for stmt in stmts {
-        match stmt {
-            Stmt::Let { name, ty, expr } => {
-                let expr_ty = type_of_expr(expr, &local, fns, source, debug.as_deref_mut())?;
-                if let Some(t) = ty {
-                    unify_or_error(t, &expr_ty, source, "type mismatch in block let", &expr.span)?;
-                    local.insert(name.clone(), t.clone());
-                } else {
-                    local.insert(name.clone(), expr_ty);
-                }
-            }
-            Stmt::Expr(expr) => {
-                let ty = type_of_expr(expr, &local, fns, source, debug.as_deref_mut())?;
-                last_ty = Some(ty);
-            }
-            Stmt::Fn { .. } => {
-                return Err(ParseError {
-                    message: "functions inside blocks are not supported".into(),
-                    span: span.clone(),
-                    source: source.to_string(),
-                });
-            }
-        }
-    }
-    last_ty.ok_or_else(|| ParseError {
-        message: "block must end with expression".into(),
-        span: span.clone(),
-        source: source.to_string(),
-    })
-}
-
-fn type_of_expr(
-    expr: &Expr,
-    vars: &HashMap<String, Type>,
-    fns: &HashMap<String, FnSig>,
-    source: &str,
-    mut debug: Option<&mut DebugInfo>,
-) -> Result<Type, ParseError> {
-    match &expr.kind {
-        ExprKind::Number(_) => Ok(Type::Number),
-        ExprKind::Bool(_) => Ok(Type::Bool),
-        ExprKind::Str(_) => Ok(Type::String),
-        ExprKind::Block(stmts) => type_of_block(stmts, vars, fns, source, debug, &expr.span),
-        ExprKind::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source, debug, &expr.span),
-        ExprKind::Var { name } => vars.get(name).cloned().ok_or_else(|| ParseError {
-            message: format!("unbound variable '{}'", name),
-            span: expr.span.clone(),
-            source: source.to_string(),
-        }),
-        ExprKind::Binary { op, left, right } => {
-            let lt = type_of_expr(left, vars, fns, source, debug.as_deref_mut())?;
-            let rt = type_of_expr(right, vars, fns, source, debug.as_deref_mut())?;
-            match op {
-                crate::ast::BinOp::Add => {
-                    if let Some(t) = unify(&lt, &rt) {
-                        match t {
-                            Type::Number => Ok(Type::Number),
-                            Type::String => Ok(Type::String),
-                            _ => Err(ParseError {
-                                message: "type mismatch for '+'".into(),
-                                span: expr.span.clone(),
-                                source: source.to_string(),
-                            }),
-                        }
-                    } else {
-                        Err(ParseError {
-                            message: "type mismatch for '+'".into(),
-                            span: expr.span.clone(),
-                            source: source.to_string(),
-                        })
-                    }
-                }
-                crate::ast::BinOp::Sub | crate::ast::BinOp::Mul | crate::ast::BinOp::Div => {
-                    unify_or_error(&Type::Number, &lt, source, "numeric operator requires Number", &expr.span)?;
-                    unify_or_error(&Type::Number, &rt, source, "numeric operator requires Number", &expr.span)?;
-                    Ok(Type::Number)
-                }
-                crate::ast::BinOp::Eq | crate::ast::BinOp::Ne => {
-                    if unify(&lt, &rt).is_some() {
-                        Ok(Type::Bool)
-                    } else {
-                        Err(ParseError {
-                            message: "equality requires operands of the same type".into(),
-                            span: expr.span.clone(),
-                            source: source.to_string(),
-                        })
-                    }
-                }
-                crate::ast::BinOp::Lt | crate::ast::BinOp::Gt | crate::ast::BinOp::Le | crate::ast::BinOp::Ge => {
-                    unify_or_error(&Type::Number, &lt, source, "comparison requires Number operands", &expr.span)?;
-                    unify_or_error(&Type::Number, &rt, source, "comparison requires Number operands", &expr.span)?;
-                    Ok(Type::Bool)
-                }
-                crate::ast::BinOp::And | crate::ast::BinOp::Or => {
-                    unify_or_error(&Type::Bool, &lt, source, "logical operator requires Bool", &expr.span)?;
-                    unify_or_error(&Type::Bool, &rt, source, "logical operator requires Bool", &expr.span)?;
-                    Ok(Type::Bool)
-                }
-            }
-        }
-        ExprKind::Call { callee, callee_span, args } => {
-            let sig = fns.get(callee).ok_or_else(|| ParseError {
-                message: format!("unknown function '{}'", callee),
-                span: callee_span.clone(),
-                source: source.to_string(),
-            })?;
-            if sig.params.len() != args.len() {
-                return Err(ParseError {
-                    message: format!(
-                        "arity mismatch: expected {}, found {}",
-                        sig.params.len(),
-                        args.len()
-                    ),
-                    span: expr.span.clone(),
-                    source: source.to_string(),
-                });
-            }
-            for (arg, expected) in args.iter().zip(sig.params.iter()) {
-                let aty = type_of_expr(arg, vars, fns, source, debug.as_deref_mut())?;
-                if &aty != expected {
-                    return Err(ParseError {
-                        message: format!(
-                            "type mismatch in argument: expected {:?}, found {:?}",
-                            expected, aty
-                        ),
-                        span: arg.span.clone(),
-                        source: source.to_string(),
-                    });
-                }
-            }
-            Ok(sig.ret.clone())
-        }
     }
 }

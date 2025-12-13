@@ -132,8 +132,12 @@ impl Parser {
                         })
                     }
                 };
-                self.expect(Tok::Colon)?;
-                let pty = self.parse_type()?;
+                let pty = if matches!(self.peek().kind, Tok::Colon) {
+                    self.advance();
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
                 params.push((pname, pty));
                 if matches!(self.peek().kind, Tok::Comma) {
                     self.advance();
