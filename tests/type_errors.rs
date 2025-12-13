@@ -28,3 +28,15 @@ fn bad_block_last_expr() {
     let out = err("{ let x: Number = 1; }");
     assert!(out.contains("block must end with expression"));
 }
+
+#[test]
+fn occurs_check_rejected() {
+    let out = err("fn self(x) = x(x); self(self)");
+    assert!(out.contains("occurs check"));
+}
+
+#[test]
+fn arity_mismatch() {
+    let out = err("fn add(a, b) = a + b; add(1)");
+    assert!(out.contains("arity mismatch"));
+}
