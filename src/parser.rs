@@ -1,0 +1,429 @@
+use std::ops::Range;
+
+use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Stmt, Type};
+use crate::error::ParseError;
+use crate::lexer::{Token, Tok};
+
+pub(crate) struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+}
+
+pub(crate) fn parse(tokens: Vec<Token>) -> Result<Vec<Stmt>, ParseError> {
+    let mut parser = Parser { tokens, pos: 0 };
+    let stmts = parser.parse_program()?;
+    match parser.expect(Tok::Eof) {
+        Ok(_) => Ok(stmts),
+        Err(e) => Err(e),
+    }
+}
+
+impl Parser {
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.pos).expect("sentinel present")
+    }
+
+    fn advance(&mut self) {
+        if self.pos < self.tokens.len() - 1 {
+            self.pos += 1;
+        }
+    }
+
+    fn expect(&mut self, expected: Tok) -> Result<Range<usize>, ParseError> {
+        if std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(&expected) {
+            let span = self.peek().span.clone();
+            self.advance();
+            Ok(span)
+        } else {
+            Err(ParseError {
+                message: format!("expected {:?}, found {:?}", expected, self.peek().kind),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            })
+        }
+    }
+
+    fn parse_program(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        let mut stmts = Vec::new();
+        while !matches!(self.peek().kind, Tok::Eof) {
+            match self.peek().kind {
+                Tok::Let => {
+                    stmts.push(self.parse_let()?);
+                    self.optional_semi();
+                }
+                Tok::Fn => {
+                    stmts.push(self.parse_fn()?);
+                    self.optional_semi();
+                }
+                _ => {
+                    let expr = self.parse_expression(0)?;
+                    stmts.push(Stmt::Expr(expr));
+                    self.optional_semi();
+                }
+            }
+        }
+        Ok(stmts)
+    }
+
+    fn optional_semi(&mut self) {
+        if matches!(self.peek().kind, Tok::Semi) {
+            self.advance();
+        }
+    }
+
+    fn parse_let(&mut self) -> Result<Stmt, ParseError> {
+        let _let_span = self.expect(Tok::Let)?;
+        let name = match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected identifier".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        let ty = if matches!(self.peek().kind, Tok::Colon) {
+            self.advance();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect(Tok::Eq)?;
+        let expr = self.parse_expression(0)?;
+        Ok(Stmt::Let { name, ty, expr })
+    }
+
+    fn parse_fn(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::Fn)?;
+        let name = match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected function name".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        self.expect(Tok::LParen)?;
+        let mut params = Vec::new();
+        if !matches!(self.peek().kind, Tok::RParen) {
+            loop {
+                let pname = match &self.peek().kind {
+                    Tok::Ident(s) => {
+                        let n = s.clone();
+                        self.advance();
+                        n
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: "expected parameter name".into(),
+                            span: self.peek().span.clone(),
+                            source: String::new(),
+                        })
+                    }
+                };
+                self.expect(Tok::Colon)?;
+                let pty = self.parse_type()?;
+                params.push((pname, pty));
+                if matches!(self.peek().kind, Tok::Comma) {
+                    self.advance();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+        self.expect(Tok::RParen)?;
+        let ret = if matches!(self.peek().kind, Tok::Colon) {
+            self.advance();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect(Tok::Eq)?;
+        let body = self.parse_expression(0)?;
+        Ok(Stmt::Fn {
+            name,
+            params,
+            ret,
+            body,
+        })
+    }
+
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        match &self.peek().kind {
+            Tok::Ident(name) => {
+                let ty = match name.as_str() {
+                    "Number" => Type::Number,
+                    "String" => Type::String,
+                    "Bool" => Type::Bool,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("unknown type '{}'", name),
+                            span: self.peek().span.clone(),
+                            source: String::new(),
+                        })
+                    }
+                };
+                self.advance();
+                Ok(ty)
+            }
+            _ => Err(ParseError {
+                message: "expected type".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
+    }
+
+    fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
+        let mut left = self.parse_primary()?;
+
+        while let Some((op, prec)) = self.current_binop() {
+            if prec < min_precedence {
+                break;
+            }
+            let next_min_prec = prec + 1;
+            self.advance();
+            let right = self.parse_expression(next_min_prec)?;
+            let span = left.span.start..right.span.end;
+            left = Expr {
+                span: span.clone(),
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_primary(&mut self) -> Result<Expr, ParseError> {
+        match &self.peek().kind {
+            Tok::Number(n) => {
+                let value = *n;
+                let span = self.peek().span.clone();
+                self.advance();
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Number(value),
+                })
+            }
+            Tok::True => {
+                let span = self.peek().span.clone();
+                self.advance();
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Bool(true),
+                })
+            }
+            Tok::False => {
+                let span = self.peek().span.clone();
+                self.advance();
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Bool(false),
+                })
+            }
+            Tok::Str(raw) => {
+                let inner = raw.trim_matches('"').to_string();
+                let span = self.peek().span.clone();
+                self.advance();
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Str(inner),
+                })
+            }
+            Tok::LBrace => self.parse_block_expr(),
+            Tok::Match => self.parse_match_expr(),
+            Tok::Ident(name) => {
+                let n = name.clone();
+                let span = self.peek().span.clone();
+                self.advance();
+                if matches!(self.peek().kind, Tok::LParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+                    if !matches!(self.peek().kind, Tok::RParen) {
+                        loop {
+                            let arg = self.parse_expression(0)?;
+                            args.push(arg);
+                            if matches!(self.peek().kind, Tok::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    let rparen_span = self.expect(Tok::RParen)?;
+                    Ok(Expr {
+                        span: span.start..rparen_span.end,
+                        kind: ExprKind::Call {
+                            callee: n,
+                            callee_span: span,
+                            args,
+                        },
+                    })
+                } else {
+                    Ok(Expr {
+                        span: span.clone(),
+                        kind: ExprKind::Var { name: n },
+                    })
+                }
+            }
+            Tok::Minus => {
+                // unary minus
+                let start = self.peek().span.start;
+                self.advance();
+                let expr = self.parse_expression(7)?;
+                Ok(Expr {
+                    span: start..expr.span.end,
+                    kind: ExprKind::Binary {
+                        op: crate::ast::BinOp::Sub,
+                        left: Box::new(Expr {
+                            span: start..start,
+                            kind: ExprKind::Number(0.0),
+                        }),
+                        right: Box::new(expr),
+                    },
+                })
+            }
+            Tok::LParen => {
+                let start = self.peek().span.start;
+                self.advance();
+                let expr = self.parse_expression(0)?;
+                let end_span = self.expect(Tok::RParen)?;
+                Ok(Expr {
+                    span: start..end_span.end,
+                    kind: expr.kind,
+                })
+            }
+            _ => Err(ParseError {
+                message: "expected expression".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
+    }
+
+    fn current_binop(&self) -> Option<(crate::ast::BinOp, u8)> {
+        let op = match self.peek().kind {
+            Tok::OrOr => Some(crate::ast::BinOp::Or),
+            Tok::AndAnd => Some(crate::ast::BinOp::And),
+            Tok::EqEq => Some(crate::ast::BinOp::Eq),
+            Tok::BangEq => Some(crate::ast::BinOp::Ne),
+            Tok::Less => Some(crate::ast::BinOp::Lt),
+            Tok::Greater => Some(crate::ast::BinOp::Gt),
+            Tok::LessEq => Some(crate::ast::BinOp::Le),
+            Tok::GreaterEq => Some(crate::ast::BinOp::Ge),
+            Tok::Plus => Some(crate::ast::BinOp::Add),
+            Tok::Minus => Some(crate::ast::BinOp::Sub),
+            Tok::Star => Some(crate::ast::BinOp::Mul),
+            Tok::Slash => Some(crate::ast::BinOp::Div),
+            _ => None,
+        }?;
+        Some((op.clone(), crate::render::binop_precedence(&op)))
+    }
+
+    fn parse_block_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect(Tok::LBrace)?.start;
+        let mut stmts = Vec::new();
+        while !matches!(self.peek().kind, Tok::RBrace) {
+            if matches!(self.peek().kind, Tok::Let) {
+                stmts.push(self.parse_let()?);
+                self.optional_semi();
+            } else {
+                let expr = self.parse_expression(0)?;
+                stmts.push(Stmt::Expr(expr));
+                self.optional_semi();
+            }
+        }
+        let end = self.expect(Tok::RBrace)?.end;
+        if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
+            return Err(ParseError {
+                message: "block must end with expression".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            });
+        }
+        Ok(Expr {
+            span: start..end,
+            kind: ExprKind::Block(stmts),
+        })
+    }
+
+    fn parse_match_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect(Tok::Match)?.start;
+        self.expect(Tok::LParen)?;
+        let expr = self.parse_expression(0)?;
+        let _ = self.expect(Tok::RParen)?;
+        self.expect(Tok::LBrace)?;
+        let mut arms = Vec::new();
+        while !matches!(self.peek().kind, Tok::RBrace) {
+            self.expect(Tok::Case)?;
+            let pat = self.parse_pattern()?;
+            self.expect(Tok::Arrow)?;
+            let body = self.parse_expression(0)?;
+            arms.push(MatchArm { pat, expr: body });
+            self.optional_semi();
+        }
+        let end = self.expect(Tok::RBrace)?.end;
+        if arms.is_empty() {
+            return Err(ParseError {
+                message: "match requires at least one arm".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            });
+        }
+        Ok(Expr {
+            span: start..end,
+            kind: ExprKind::Match {
+                expr: Box::new(expr),
+                arms,
+            },
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        match &self.peek().kind {
+            Tok::Underscore => {
+                self.advance();
+                Ok(Pattern::Wildcard)
+            }
+            Tok::True => {
+                self.advance();
+                Ok(Pattern::Bool(true))
+            }
+            Tok::False => {
+                self.advance();
+                Ok(Pattern::Bool(false))
+            }
+            Tok::Number(n) => {
+                let value = *n;
+                self.advance();
+                Ok(Pattern::Number(value))
+            }
+            Tok::Str(raw) => {
+                let inner = raw.trim_matches('"').to_string();
+                self.advance();
+                Ok(Pattern::Str(inner))
+            }
+            _ => Err(ParseError {
+                message: "expected pattern".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
+    }
+}
