@@ -24,7 +24,7 @@ pub enum BinOp {
 pub enum Expr {
     Number(f64),
     Bool(bool),
-    Var(String),
+    Var { name: String, span: Range<usize> },
     Str(String),
     Block(Vec<Stmt>),
     Match {
@@ -33,6 +33,7 @@ pub enum Expr {
     },
     Call {
         callee: String,
+        callee_span: Range<usize>,
         args: Vec<Expr>,
     },
     Binary {
@@ -506,6 +507,7 @@ impl Parser {
             Tok::Match => self.parse_match_expr(),
             Tok::Ident(name) => {
                 let n = name.clone();
+                let span = self.peek().span.clone();
                 self.advance();
                 if matches!(self.peek().kind, Tok::LParen) {
                     // function call
@@ -523,9 +525,13 @@ impl Parser {
                         }
                     }
                     self.expect(Tok::RParen)?;
-                    Ok(Expr::Call { callee: n, args })
+                    Ok(Expr::Call {
+                        callee: n,
+                        callee_span: span,
+                        args,
+                    })
                 } else {
-                    Ok(Expr::Var(n))
+                    Ok(Expr::Var { name: n, span })
                 }
             }
             Tok::Minus => {
@@ -752,8 +758,8 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
         }
         Expr::Bool(b) => format!("{b}"),
         Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
-        Expr::Var(name) => name.clone(),
-        Expr::Call { callee, args } => {
+        Expr::Var { name, .. } => name.clone(),
+        Expr::Call { callee, args, .. } => {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
             format!("{callee}({})", rendered_args.join(", "))
         }
@@ -1103,9 +1109,9 @@ fn type_of_expr(
         Expr::Str(_) => Ok(Type::String),
         Expr::Block(stmts) => type_of_block(stmts, vars, fns, source, debug),
         Expr::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source, debug),
-        Expr::Var(name) => vars.get(name).cloned().ok_or_else(|| ParseError {
+        Expr::Var { name, span } => vars.get(name).cloned().ok_or_else(|| ParseError {
             message: format!("unbound variable '{}'", name),
-            span: 0..0,
+            span: span.clone(),
             source: source.to_string(),
         }),
         Expr::Binary { op, left, right } => {
@@ -1159,10 +1165,10 @@ fn type_of_expr(
                 }
             }
         }
-        Expr::Call { callee, args } => {
+        Expr::Call { callee, callee_span, args } => {
             let sig = fns.get(callee).ok_or_else(|| ParseError {
                 message: format!("unknown function '{}'", callee),
-                span: 0..0,
+                span: callee_span.clone(),
                 source: source.to_string(),
             })?;
             if sig.params.len() != args.len() {
@@ -1409,5 +1415,17 @@ mod tests {
         let dbg = DebugInfo::default();
         let _ = transpile_with_debug("let y: Number = 1; y", None).unwrap();
         assert!(dbg.steps.is_empty());
+    }
+
+    #[test]
+    fn unbound_variable_span() {
+        let err = transpile("x").unwrap_err();
+        assert_eq!(err.span, 0..1);
+    }
+
+    #[test]
+    fn block_scope_unbound_span() {
+        let err = transpile("{ let x: Number = 1; x } + x").unwrap_err();
+        assert_eq!(err.span, 27..28);
     }
 }
