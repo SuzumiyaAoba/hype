@@ -57,11 +57,11 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let { name: String, ty: Type, expr: Expr },
+    Let { name: String, ty: Option<Type>, expr: Expr },
     Fn {
         name: String,
         params: Vec<(String, Type)>,
-        ret: Type,
+        ret: Option<Type>,
         body: Expr,
     },
     Expr(Expr),
@@ -72,6 +72,7 @@ pub enum Type {
     Number,
     String,
     Bool,
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
@@ -289,8 +290,12 @@ impl Parser {
                 })
             }
         };
-        self.expect(Tok::Colon)?;
-        let ty = self.parse_type()?;
+        let ty = if matches!(self.peek().kind, Tok::Colon) {
+            self.advance();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Tok::Eq)?;
         let expr = self.parse_expression(0)?;
         Ok(Stmt::Let { name, ty, expr })
@@ -342,8 +347,12 @@ impl Parser {
             }
         }
         self.expect(Tok::RParen)?;
-        self.expect(Tok::Colon)?;
-        let ret = self.parse_type()?;
+        let ret = if matches!(self.peek().kind, Tok::Colon) {
+            self.advance();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Tok::Eq)?;
         let body = self.parse_expression(0)?;
         Ok(Stmt::Fn {
@@ -854,7 +863,7 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
                 name.clone(),
                 FnSig {
                     params: param_tys,
-                    ret: ret.clone(),
+                    ret: ret.clone().unwrap_or(Type::Unknown),
                 },
             );
         }
@@ -865,30 +874,25 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
         match stmt {
             Stmt::Let { name, ty, expr } => {
                 let expr_ty = type_of_expr(expr, &vars, &fns, source)?;
-                if &expr_ty != ty {
-                    return Err(ParseError {
-                        message: format!("type mismatch: expected {:?}, found {:?}", ty, expr_ty),
-                        span: 0..0,
-                        source: source.to_string(),
-                    });
+                if let Some(t) = ty {
+                    unify_or_error(t, &expr_ty, source, "type mismatch for let binding")?;
+                    vars.insert(name.clone(), t.clone());
+                } else {
+                    vars.insert(name.clone(), expr_ty);
                 }
-                vars.insert(name.clone(), ty.clone());
             }
-            Stmt::Fn { name: _, params, ret, body } => {
+            Stmt::Fn { name, params, ret, body } => {
                 let mut local = vars.clone();
                 for (pname, pty) in params {
                     local.insert(pname.clone(), pty.clone());
                 }
                 let body_ty = type_of_expr(body, &local, &fns, source)?;
-                if &body_ty != ret {
-                    return Err(ParseError {
-                        message: format!(
-                            "type mismatch in function body: expected {:?}, found {:?}",
-                            ret, body_ty
-                        ),
-                        span: 0..0,
-                        source: source.to_string(),
-                    });
+                let sig = fns.get_mut(name).expect("fn sig exists");
+                if let Some(r) = ret {
+                    unify_or_error(r, &body_ty, source, "type mismatch in function body")?;
+                    sig.ret = r.clone();
+                } else {
+                    sig.ret = body_ty;
                 }
             }
             Stmt::Expr(expr) => {
@@ -897,6 +901,28 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
         }
     }
     Ok(())
+}
+
+fn unify_or_error(expected: &Type, found: &Type, source: &str, msg: &str) -> Result<(), ParseError> {
+    if let Some(_) = unify(expected, found) {
+        Ok(())
+    } else {
+        Err(ParseError {
+            message: format!("{msg}: expected {:?}, found {:?}", expected, found),
+            span: 0..0,
+            source: source.to_string(),
+        })
+    }
+}
+
+fn unify(a: &Type, b: &Type) -> Option<Type> {
+    match (a, b) {
+        (Type::Unknown, t) | (t, Type::Unknown) => Some(t.clone()),
+        (Type::Number, Type::Number) => Some(Type::Number),
+        (Type::String, Type::String) => Some(Type::String),
+        (Type::Bool, Type::Bool) => Some(Type::Bool),
+        _ => None,
+    }
 }
 
 fn type_of_expr(
@@ -921,10 +947,16 @@ fn type_of_expr(
             let rt = type_of_expr(right, vars, fns, source)?;
             match op {
                 BinOp::Add => {
-                    if lt == Type::Number && rt == Type::Number {
-                        Ok(Type::Number)
-                    } else if lt == Type::String && rt == Type::String {
-                        Ok(Type::String)
+                    if let Some(t) = unify(&lt, &rt) {
+                        match t {
+                            Type::Number => Ok(Type::Number),
+                            Type::String => Ok(Type::String),
+                            _ => Err(ParseError {
+                                message: "type mismatch for '+'".into(),
+                                span: 0..0,
+                                source: source.to_string(),
+                            }),
+                        }
                     } else {
                         Err(ParseError {
                             message: "type mismatch for '+'".into(),
@@ -934,18 +966,12 @@ fn type_of_expr(
                     }
                 }
                 BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                    if lt == Type::Number && rt == Type::Number {
-                        Ok(Type::Number)
-                    } else {
-                        Err(ParseError {
-                            message: "numeric operator requires Number".into(),
-                            span: 0..0,
-                            source: source.to_string(),
-                        })
-                    }
+                    unify_or_error(&Type::Number, &lt, source, "numeric operator requires Number")?;
+                    unify_or_error(&Type::Number, &rt, source, "numeric operator requires Number")?;
+                    Ok(Type::Number)
                 }
                 BinOp::Eq | BinOp::Ne => {
-                    if lt == rt {
+                    if unify(&lt, &rt).is_some() {
                         Ok(Type::Bool)
                     } else {
                         Err(ParseError {
@@ -956,26 +982,14 @@ fn type_of_expr(
                     }
                 }
                 BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
-                    if lt == Type::Number && rt == Type::Number {
-                        Ok(Type::Bool)
-                    } else {
-                        Err(ParseError {
-                            message: "comparison requires Number operands".into(),
-                            span: 0..0,
-                            source: source.to_string(),
-                        })
-                    }
+                    unify_or_error(&Type::Number, &lt, source, "comparison requires Number operands")?;
+                    unify_or_error(&Type::Number, &rt, source, "comparison requires Number operands")?;
+                    Ok(Type::Bool)
                 }
                 BinOp::And | BinOp::Or => {
-                    if lt == Type::Bool && rt == Type::Bool {
-                        Ok(Type::Bool)
-                    } else {
-                        Err(ParseError {
-                            message: "logical operator requires Bool".into(),
-                            span: 0..0,
-                            source: source.to_string(),
-                        })
-                    }
+                    unify_or_error(&Type::Bool, &lt, source, "logical operator requires Bool")?;
+                    unify_or_error(&Type::Bool, &rt, source, "logical operator requires Bool")?;
+                    Ok(Type::Bool)
                 }
             }
         }
@@ -1033,14 +1047,12 @@ fn type_of_block(
         match stmt {
             Stmt::Let { name, ty, expr } => {
                 let expr_ty = type_of_expr(expr, &local, fns, source)?;
-                if &expr_ty != ty {
-                    return Err(ParseError {
-                        message: format!("type mismatch: expected {:?}, found {:?}", ty, expr_ty),
-                        span: 0..0,
-                        source: source.to_string(),
-                    });
+                if let Some(t) = ty {
+                    unify_or_error(t, &expr_ty, source, "type mismatch in block let")?;
+                    local.insert(name.clone(), t.clone());
+                } else {
+                    local.insert(name.clone(), expr_ty);
                 }
-                local.insert(name.clone(), ty.clone());
             }
             Stmt::Expr(expr) => {
                 let ty = type_of_expr(expr, &local, fns, source)?;
@@ -1069,6 +1081,7 @@ fn ensure_pattern_matches(
 ) -> Result<(), ParseError> {
     let ok = match pat {
         Pattern::Wildcard => true,
+        _ if matches!(ty, Type::Unknown) => true,
         Pattern::Bool(_) => matches!(ty, Type::Bool),
         Pattern::Number(_) => matches!(ty, Type::Number),
         Pattern::Str(_) => matches!(ty, Type::String),
@@ -1105,7 +1118,9 @@ fn type_of_match(
         ensure_pattern_matches(&arm.pat, &scrutinee_ty, source)?;
         let ty = type_of_expr(&arm.expr, vars, fns, source)?;
         if let Some(prev) = &result_ty {
-            if prev != &ty {
+            if let Some(u) = unify(prev, &ty) {
+                result_ty = Some(u);
+            } else {
                 return Err(ParseError {
                     message: format!(
                         "match arms must have the same type, found {:?} and {:?}",
@@ -1194,5 +1209,17 @@ mod tests {
             out,
             "(() => { const __match = true; if (__match === true) { return (() => { let x = 1; return x; })(); } else if (true) { return 0; } return undefined; })()"
         );
+    }
+
+    #[test]
+    fn let_inference_without_annotation() {
+        let out = js("let x = 1 + 2; x");
+        assert_eq!(out, "let x = 1 + 2;\nx");
+    }
+
+    #[test]
+    fn fn_return_type_inference() {
+        let out = js("fn inc(a: Number) = a + 1; inc(2)");
+        assert_eq!(out, "function inc(a) { return a + 1; }\ninc(2)");
     }
 }
