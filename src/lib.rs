@@ -25,6 +25,11 @@ pub enum Expr {
     Bool(bool),
     Var(String),
     Str(String),
+    Block(Vec<Stmt>),
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
     Call {
         callee: String,
         args: Vec<Expr>,
@@ -34,6 +39,20 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Wildcard,
+    Bool(bool),
+    Number(f64),
+    Str(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pat: Pattern,
+    pub expr: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,10 +117,16 @@ enum Tok {
     AndAnd,
     #[token("||")]
     OrOr,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
     #[token("(")]
     LParen,
     #[token(")")]
     RParen,
+    #[token("=>")]
+    Arrow,
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
     Str(String),
     #[token(",")]
@@ -110,6 +135,12 @@ enum Tok {
     Eq,
     #[token(";")]
     Semi,
+    #[token("_", priority = 2)]
+    Underscore,
+    #[token("match")]
+    Match,
+    #[token("case")]
+    Case,
     #[token("let")]
     Let,
     #[token("fn")]
@@ -120,7 +151,7 @@ enum Tok {
     False,
     #[token(":")]
     Colon,
-    #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
+    #[regex(r"[A-Za-z][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
     #[regex(r"[ \t\r\n]+", logos::skip)]
     Whitespace,
@@ -389,6 +420,8 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Str(inner))
             }
+            Tok::LBrace => self.parse_block_expr(),
+            Tok::Match => self.parse_match_expr(),
             Tok::Ident(name) => {
                 let n = name.clone();
                 self.advance();
@@ -431,6 +464,91 @@ impl Parser {
             }
             _ => Err(ParseError {
                 message: "expected expression".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
+    }
+
+    fn parse_block_expr(&mut self) -> Result<Expr, ParseError> {
+        self.expect(Tok::LBrace)?;
+        let mut stmts = Vec::new();
+        while !matches!(self.peek().kind, Tok::RBrace) {
+            if matches!(self.peek().kind, Tok::Let) {
+                stmts.push(self.parse_let()?);
+                self.optional_semi();
+            } else {
+                let expr = self.parse_expression(0)?;
+                stmts.push(Stmt::Expr(expr));
+                self.optional_semi();
+            }
+        }
+        self.expect(Tok::RBrace)?;
+        if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
+            return Err(ParseError {
+                message: "block must end with expression".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            });
+        }
+        Ok(Expr::Block(stmts))
+    }
+
+    fn parse_match_expr(&mut self) -> Result<Expr, ParseError> {
+        self.expect(Tok::Match)?;
+        self.expect(Tok::LParen)?;
+        let expr = self.parse_expression(0)?;
+        self.expect(Tok::RParen)?;
+        self.expect(Tok::LBrace)?;
+        let mut arms = Vec::new();
+        while !matches!(self.peek().kind, Tok::RBrace) {
+            self.expect(Tok::Case)?;
+            let pat = self.parse_pattern()?;
+            self.expect(Tok::Arrow)?;
+            let body = self.parse_expression(0)?;
+            arms.push(MatchArm { pat, expr: body });
+            self.optional_semi();
+        }
+        self.expect(Tok::RBrace)?;
+        if arms.is_empty() {
+            return Err(ParseError {
+                message: "match requires at least one arm".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            });
+        }
+        Ok(Expr::Match {
+            expr: Box::new(expr),
+            arms,
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        match &self.peek().kind {
+            Tok::Underscore => {
+                self.advance();
+                Ok(Pattern::Wildcard)
+            }
+            Tok::True => {
+                self.advance();
+                Ok(Pattern::Bool(true))
+            }
+            Tok::False => {
+                self.advance();
+                Ok(Pattern::Bool(false))
+            }
+            Tok::Number(n) => {
+                let value = *n;
+                self.advance();
+                Ok(Pattern::Number(value))
+            }
+            Tok::Str(raw) => {
+                let inner = raw.trim_matches('"').to_string();
+                self.advance();
+                Ok(Pattern::Str(inner))
+            }
+            _ => Err(ParseError {
+                message: "expected pattern".into(),
                 span: self.peek().span.clone(),
                 source: String::new(),
             }),
@@ -485,14 +603,70 @@ fn binop_symbol(op: &BinOp) -> &'static str {
     }
 }
 
+fn render_number_literal(n: f64) -> String {
+    if n.fract() == 0.0 {
+        format!("{}", n as i64)
+    } else {
+        format!("{}", n)
+    }
+}
+
+fn render_pattern_condition(var: &str, pat: &Pattern) -> String {
+    match pat {
+        Pattern::Wildcard => "true".to_string(),
+        Pattern::Bool(b) => format!("{var} === {b}"),
+        Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
+        Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
+    }
+}
+
+fn render_block(stmts: &[Stmt]) -> String {
+    let mut parts = Vec::new();
+    let last_expr = match stmts.last() {
+        Some(Stmt::Expr(e)) => e,
+        _ => unreachable!("parser enforces block ending with expression"),
+    };
+    for stmt in stmts.iter().take(stmts.len().saturating_sub(1)) {
+        match stmt {
+            Stmt::Let { name, expr, .. } => {
+                let js = render_js(expr, 0);
+                parts.push(format!("let {name} = {js};"));
+            }
+            Stmt::Expr(expr) => {
+                let js = render_js(expr, 0);
+                parts.push(format!("{js};"));
+            }
+            Stmt::Fn { .. } => {
+                // 未サポート
+            }
+        }
+    }
+    let last = render_js(last_expr, 0);
+    parts.push(format!("return {last};"));
+    format!("(() => {{ {} }})()", parts.join(" "))
+}
+
+fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
+    let scrutinee = render_js(expr, 0);
+    let mut parts = Vec::new();
+    parts.push(format!("const __match = {scrutinee};"));
+    for (i, arm) in arms.iter().enumerate() {
+        let cond = render_pattern_condition("__match", &arm.pat);
+        let body = render_js(&arm.expr, 0);
+        if i == 0 {
+            parts.push(format!("if ({cond}) {{ return {body}; }}"));
+        } else {
+            parts.push(format!("else if ({cond}) {{ return {body}; }}"));
+        }
+    }
+    parts.push("return undefined;".to_string());
+    format!("(() => {{ {} }})()", parts.join(" "))
+}
+
 fn render_js(expr: &Expr, parent_prec: u8) -> String {
     match expr {
         Expr::Number(n) => {
-            if n.fract() == 0.0 {
-                format!("{}", *n as i64)
-            } else {
-                format!("{}", n)
-            }
+            render_number_literal(*n)
         }
         Expr::Bool(b) => format!("{b}"),
         Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
@@ -501,6 +675,8 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
             format!("{callee}({})", rendered_args.join(", "))
         }
+        Expr::Block(stmts) => render_block(stmts),
+        Expr::Match { expr, arms } => render_match(expr, arms),
         Expr::Binary { op, left, right } => {
             let prec = binop_precedence(op);
             let op_str = binop_symbol(op);
@@ -733,12 +909,14 @@ fn type_of_expr(
         Expr::Number(_) => Ok(Type::Number),
         Expr::Bool(_) => Ok(Type::Bool),
         Expr::Str(_) => Ok(Type::String),
+        Expr::Block(stmts) => type_of_block(stmts, vars, fns, source),
+        Expr::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source),
         Expr::Var(name) => vars.get(name).cloned().ok_or_else(|| ParseError {
             message: format!("unbound variable '{}'", name),
             span: 0..0,
             source: source.to_string(),
         }),
-                Expr::Binary { op, left, right } => {
+        Expr::Binary { op, left, right } => {
             let lt = type_of_expr(left, vars, fns, source)?;
             let rt = type_of_expr(right, vars, fns, source)?;
             match op {
@@ -836,6 +1014,119 @@ fn type_of_expr(
     }
 }
 
+fn type_of_block(
+    stmts: &[Stmt],
+    vars: &HashMap<String, Type>,
+    fns: &HashMap<String, FnSig>,
+    source: &str,
+) -> Result<Type, ParseError> {
+    if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
+        return Err(ParseError {
+            message: "block must end with expression".into(),
+            span: 0..0,
+            source: source.to_string(),
+        });
+    }
+    let mut local = vars.clone();
+    let mut last_ty = None;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, ty, expr } => {
+                let expr_ty = type_of_expr(expr, &local, fns, source)?;
+                if &expr_ty != ty {
+                    return Err(ParseError {
+                        message: format!("type mismatch: expected {:?}, found {:?}", ty, expr_ty),
+                        span: 0..0,
+                        source: source.to_string(),
+                    });
+                }
+                local.insert(name.clone(), ty.clone());
+            }
+            Stmt::Expr(expr) => {
+                let ty = type_of_expr(expr, &local, fns, source)?;
+                last_ty = Some(ty);
+            }
+            Stmt::Fn { .. } => {
+                return Err(ParseError {
+                    message: "functions inside blocks are not supported".into(),
+                    span: 0..0,
+                    source: source.to_string(),
+                });
+            }
+        }
+    }
+    last_ty.ok_or_else(|| ParseError {
+        message: "block must end with expression".into(),
+        span: 0..0,
+        source: source.to_string(),
+    })
+}
+
+fn ensure_pattern_matches(
+    pat: &Pattern,
+    ty: &Type,
+    source: &str,
+) -> Result<(), ParseError> {
+    let ok = match pat {
+        Pattern::Wildcard => true,
+        Pattern::Bool(_) => matches!(ty, Type::Bool),
+        Pattern::Number(_) => matches!(ty, Type::Number),
+        Pattern::Str(_) => matches!(ty, Type::String),
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(ParseError {
+            message: format!("pattern does not match type {:?}", ty),
+            span: 0..0,
+            source: source.to_string(),
+        })
+    }
+}
+
+fn type_of_match(
+    expr: &Expr,
+    arms: &[MatchArm],
+    vars: &HashMap<String, Type>,
+    fns: &HashMap<String, FnSig>,
+    source: &str,
+) -> Result<Type, ParseError> {
+    if arms.is_empty() {
+        return Err(ParseError {
+            message: "match requires at least one arm".into(),
+            span: 0..0,
+            source: source.to_string(),
+        });
+    }
+
+    let scrutinee_ty = type_of_expr(expr, vars, fns, source)?;
+    let mut result_ty: Option<Type> = None;
+    for arm in arms {
+        ensure_pattern_matches(&arm.pat, &scrutinee_ty, source)?;
+        let ty = type_of_expr(&arm.expr, vars, fns, source)?;
+        if let Some(prev) = &result_ty {
+            if prev != &ty {
+                return Err(ParseError {
+                    message: format!(
+                        "match arms must have the same type, found {:?} and {:?}",
+                        prev, ty
+                    ),
+                    span: 0..0,
+                    source: source.to_string(),
+                });
+            }
+        } else {
+            result_ty = Some(ty);
+        }
+    }
+
+    result_ty.ok_or_else(|| ParseError {
+        message: "match requires at least one arm".into(),
+        span: 0..0,
+        source: source.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -888,5 +1179,20 @@ mod tests {
     fn function_call_with_bool_return() {
         let out = js("fn eq(a: Number, b: Number): Bool = a == b; eq(1, 1)");
         assert_eq!(out, "function eq(a, b) { return a == b; }\neq(1, 1)");
+    }
+
+    #[test]
+    fn block_expression_returns_last_expr() {
+        let out = js("{ let x: Number = 1; x + 2 }");
+        assert_eq!(out, "(() => { let x = 1; return x + 2; })()");
+    }
+
+    #[test]
+    fn match_expression_over_bool() {
+        let out = js("match(true){case true => { let x: Number = 1; x }; case _ => 0 }");
+        assert_eq!(
+            out,
+            "(() => { const __match = true; if (__match === true) { return (() => { let x = 1; return x; })(); } else if (true) { return 0; } return undefined; })()"
+        );
     }
 }
