@@ -158,7 +158,7 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
         crate::ast::Pattern::Bool(b) => format!("{var} === {b}"),
         crate::ast::Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
         crate::ast::Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
-        crate::ast::Pattern::Tuple(items) | crate::ast::Pattern::List(items) => {
+        crate::ast::Pattern::Tuple(items) => {
             let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length === {}", items.len())];
             for (i, pat) in items.iter().enumerate() {
                 let inner_var = format!("{var}[{i}]");
@@ -166,10 +166,17 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
             }
             conds.join(" && ")
         }
-        crate::ast::Pattern::Cons(head, tail) => {
-            let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length >= 1")];
-            conds.push(render_pattern_condition(&format!("{var}[0]"), head));
-            conds.push(render_pattern_condition(&format!("{var}.slice(1)"), tail));
+        crate::ast::Pattern::List { items, rest } => {
+            let len_cond = if rest.is_some() {
+                format!("{var}.length >= {}", items.len())
+            } else {
+                format!("{var}.length === {}", items.len())
+            };
+            let mut conds = vec![format!("Array.isArray({var})"), len_cond];
+            for (i, pat) in items.iter().enumerate() {
+                let inner_var = format!("{var}[{i}]");
+                conds.push(render_pattern_condition(&inner_var, pat));
+            }
             conds.join(" && ")
         }
     }
@@ -178,17 +185,21 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
 fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String)> {
     match pat {
         crate::ast::Pattern::Bind(name) => vec![(name.clone(), var.to_string())],
-        crate::ast::Pattern::Tuple(items) | crate::ast::Pattern::List(items) => {
+        crate::ast::Pattern::Tuple(items) => {
             let mut out = Vec::new();
             for (i, p) in items.iter().enumerate() {
                 out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
             }
             out
         }
-        crate::ast::Pattern::Cons(head, tail) => {
+        crate::ast::Pattern::List { items, rest } => {
             let mut out = Vec::new();
-            out.extend(pattern_bindings(&format!("{var}[0]"), head));
-            out.extend(pattern_bindings(&format!("{var}.slice(1)"), tail));
+            for (i, p) in items.iter().enumerate() {
+                out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
+            }
+            if let Some(r) = rest {
+                out.push((r.clone(), format!("{var}.slice({})", items.len())));
+            }
             out
         }
         _ => Vec::new(),

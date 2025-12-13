@@ -557,7 +557,7 @@ fn pattern_info(pat: &Pattern, state: &mut InferState) -> (Type, Vec<(String, Ty
                 .collect();
             (Type::Tuple(elems), binds)
         }
-        Pattern::List(items) => {
+        Pattern::List { items, rest } => {
             let mut binds = Vec::new();
             let elem_ty = if let Some(first) = items.first() {
                 let (t, b) = pattern_info(first, state);
@@ -570,14 +570,9 @@ fn pattern_info(pat: &Pattern, state: &mut InferState) -> (Type, Vec<(String, Ty
                 let (_t, b) = pattern_info(p, state);
                 binds.extend(b);
             }
-            (Type::List(Box::new(elem_ty)), binds)
-        }
-        Pattern::Cons(head, tail) => {
-            let mut binds = Vec::new();
-            let (elem_ty, b1) = pattern_info(head, state);
-            binds.extend(b1);
-            let (_tail_ty, b2) = pattern_info(tail, state);
-            binds.extend(b2);
+            if let Some(name) = rest {
+                binds.push((name.clone(), Type::List(Box::new(elem_ty.clone()))));
+            }
             (Type::List(Box::new(elem_ty)), binds)
         }
     }

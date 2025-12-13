@@ -47,6 +47,8 @@ pub(crate) enum Tok {
     Arrow,
     #[token("->")]
     ThinArrow,
+    #[token("...")]
+    Ellipsis,
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
     Str(String),
     #[token(",")]

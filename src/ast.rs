@@ -72,8 +72,10 @@ pub enum Pattern {
     Number(f64),
     Str(String),
     Tuple(Vec<Pattern>),
-    List(Vec<Pattern>),
-    Cons(Box<Pattern>, Box<Pattern>),
+    List {
+        items: Vec<Pattern>,
+        rest: Option<String>,
+    },
     Bind(String),
 }
 

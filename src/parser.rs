@@ -593,8 +593,28 @@ impl Parser {
             Tok::LBracket => {
                 self.advance();
                 let mut items = Vec::new();
+                let mut rest = None;
                 if !matches!(self.peek().kind, Tok::RBracket) {
                     loop {
+                        if matches!(self.peek().kind, Tok::Ellipsis) {
+                            self.advance();
+                            let name = match &self.peek().kind {
+                                Tok::Ident(s) => {
+                                    let n = s.clone();
+                                    self.advance();
+                                    n
+                                }
+                                _ => {
+                                    return Err(ParseError {
+                                        message: "expected identifier after '...'".into(),
+                                        span: self.peek().span.clone(),
+                                        source: String::new(),
+                                    })
+                                }
+                            };
+                            rest = Some(name);
+                            break;
+                        }
                         let p = self.parse_pattern()?;
                         items.push(p);
                         if matches!(self.peek().kind, Tok::Comma) {
@@ -606,7 +626,7 @@ impl Parser {
                     }
                 }
                 let _ = self.expect(Tok::RBracket)?;
-                Pattern::List(items)
+                Pattern::List { items, rest }
             }
             _ => {
                 return Err(ParseError {
@@ -616,12 +636,6 @@ impl Parser {
                 })
             }
         };
-
-        while matches!(self.peek().kind, Tok::Cons) {
-            self.advance();
-            let tail = self.parse_pattern()?;
-            pat = Pattern::Cons(Box::new(pat), Box::new(tail));
-        }
 
         Ok(pat)
     }
