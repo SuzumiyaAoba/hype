@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 60
+assertion_line: 65
 expression: out
 ---
 polymorphic_fn
@@ -75,3 +75,13 @@ let_rec_in_block
 { let rec sum = \n -> match(n){case 0 => 0; case _ => n + sum(n - 1)}; sum(3) }
 ---
 (() => { let sum = (function(n) { return (() => { const __match = n; if (__match === 0) { return 0; } else if (true) { return n + sum(n - 1); } return undefined; })(); }); return sum(3); })()
+===
+tuple_literal
+(1, true, "s")
+---
+[1, true, "s"]
+===
+tuple_pattern_match
+match((1, true)){case (1, true) => 0; case _ => 1}
+---
+(() => { const __match = [1, true]; if (Array.isArray(__match) && __match.length === 2 && __match[0] === 1 && __match[1] === true) { return 0; } else if (true) { return 1; } return undefined; })()

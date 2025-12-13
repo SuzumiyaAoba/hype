@@ -188,6 +188,26 @@ impl Parser {
                 self.advance();
                 Ok(ty)
             }
+            Tok::LParen => {
+                let _ = self.expect(Tok::LParen)?;
+                let first = self.parse_type()?;
+                if matches!(self.peek().kind, Tok::Comma) {
+                    let mut items = vec![first];
+                    while matches!(self.peek().kind, Tok::Comma) {
+                        self.advance();
+                        let t = self.parse_type()?;
+                        items.push(t);
+                        if !matches!(self.peek().kind, Tok::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Tok::RParen)?;
+                    Ok(Type::Tuple(items))
+                } else {
+                    self.expect(Tok::RParen)?;
+                    Ok(first)
+                }
+            }
             _ => Err(ParseError {
                 message: "expected type".into(),
                 span: self.peek().span.clone(),
@@ -310,21 +330,39 @@ impl Parser {
                     },
                 })
             }
-            Tok::LParen => {
-                let start = self.peek().span.start;
-                self.advance();
-                let expr = self.parse_expression(0)?;
-                let end_span = self.expect(Tok::RParen)?;
-                Ok(Expr {
-                    span: start..end_span.end,
-                    kind: expr.kind,
-                })
-            }
+            Tok::LParen => self.parse_paren_or_tuple(),
             _ => Err(ParseError {
                 message: "expected expression".into(),
                 span: self.peek().span.clone(),
                 source: String::new(),
             }),
+        }
+    }
+
+    fn parse_paren_or_tuple(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect(Tok::LParen)?.start;
+        let first = self.parse_expression(0)?;
+        if matches!(self.peek().kind, Tok::Comma) {
+            let mut items = vec![first];
+            while matches!(self.peek().kind, Tok::Comma) {
+                self.advance();
+                let expr = self.parse_expression(0)?;
+                items.push(expr);
+                if !matches!(self.peek().kind, Tok::Comma) {
+                    break;
+                }
+            }
+            let end = self.expect(Tok::RParen)?.end;
+            Ok(Expr {
+                span: start..end,
+                kind: ExprKind::Tuple(items),
+            })
+        } else {
+            let end_span = self.expect(Tok::RParen)?;
+            Ok(Expr {
+                span: start..end_span.end,
+                kind: first.kind,
+            })
         }
     }
 
@@ -503,6 +541,26 @@ impl Parser {
                 let inner = raw.trim_matches('"').to_string();
                 self.advance();
                 Ok(Pattern::Str(inner))
+            }
+            Tok::LParen => {
+                let _start = self.expect(Tok::LParen)?;
+                let first = self.parse_pattern()?;
+                if matches!(self.peek().kind, Tok::Comma) {
+                    let mut items = vec![first];
+                    while matches!(self.peek().kind, Tok::Comma) {
+                        self.advance();
+                        let p = self.parse_pattern()?;
+                        items.push(p);
+                        if !matches!(self.peek().kind, Tok::Comma) {
+                            break;
+                        }
+                    }
+                    let _ = self.expect(Tok::RParen)?;
+                    Ok(Pattern::Tuple(items))
+                } else {
+                    let _ = self.expect(Tok::RParen)?;
+                    Ok(first)
+                }
             }
             _ => Err(ParseError {
                 message: "expected pattern".into(),
