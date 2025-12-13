@@ -6,7 +6,7 @@
   - 回答は日本語で簡潔かつ丁寧に行うこと。
   - 不明点や曖昧さは必ず確認し、無断で破壊的操作（リセット/クリーン等）は行わない。
   - 既存の未コミット変更は尊重し、巻き戻さない。
-  - 作業状況は常に GitHub Project「Kanban for AI」（#4）に反映すること（Backlog→In Progress→Done）。
+  - 作業状況は常に GitHub Project「Kanban for AI」（#4）に反映すること（Backlog→In Progress→In review、マージはユーザ側で行う）。
 
 - プロジェクト構造/技術スタック
   - Rust 2024 edition。主要依存: clap, logos, rustyline, thiserror, anstyle, insta（テスト）。
@@ -29,7 +29,7 @@
   - 可能なら関連テストを実行して結果を共有する。実行できない場合は理由とリスクを記載する。
   - 手元検証手順があれば簡潔にメモする。
 
-- 管理方針: GitHub Project「Kanban for AI」（Userプロジェクト、番号 #4、URL: https://github.com/users/SuzumiyaAoba/projects/4、Project ID: `PVT_kwHOAmaFM84BKgQt`）を使って言語の最低限の機能開発をトラッキングします（Backlog→In Progress→Done）。`gh` で操作する際は `--owner SuzumiyaAoba --number 4` を指定します。project スコープ不足で `gh project ...` が失敗する場合は権限付与後に再実行する。
+- 管理方針: GitHub Project「Kanban for AI」（Userプロジェクト、番号 #4、URL: https://github.com/users/SuzumiyaAoba/projects/4、Project ID: `PVT_kwHOAmaFM84BKgQt`）を使って言語の最低限の機能開発をトラッキングします（Backlog→In Progress→In review）。`gh` で操作する際は `--owner SuzumiyaAoba --number 4` を指定します。project スコープ不足で `gh project ...` が失敗する場合は権限付与後に再実行する。
 - チケット作成は Issue で行う（Draft は使わない）。`gh issue create ...` で発行し、`gh project item-add 4 --owner SuzumiyaAoba --url <issue>` でKanbanに登録する。
 - 今後、ユーザ指示で覚えておくべき事項があれば本ファイルに追記して記録する。
 
