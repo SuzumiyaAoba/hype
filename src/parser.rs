@@ -419,6 +419,9 @@ impl Parser {
             if matches!(self.peek().kind, Tok::Let) {
                 stmts.push(self.parse_let()?);
                 self.optional_semi();
+            } else if matches!(self.peek().kind, Tok::Fn) {
+                stmts.push(self.parse_fn()?);
+                self.optional_semi();
             } else {
                 let expr = self.parse_expression(0)?;
                 stmts.push(Stmt::Expr(expr));

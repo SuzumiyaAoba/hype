@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 44
+assertion_line: 52
 expression: out
 ---
 polymorphic_fn
@@ -51,3 +51,16 @@ fn wrap(x) = { let add = \y -> x + y; add }; wrap(1)
 ---
 function wrap(x) { return (() => { let add = (function(y) { return x + y; }); return add; })(); }
 wrap(1)
+===
+mutual_in_block
+{ fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)}; fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)}; is_even(6) }
+---
+(() => { function is_even(n) { return (() => { const __match = n; if (__match === 0) { return true; } else if (true) { return is_odd(n - 1); } return undefined; })(); } function is_odd(n) { return (() => { const __match = n; if (__match === 0) { return false; } else if (true) { return is_even(n - 1); } return undefined; })(); } return is_even(6); })()
+===
+forward_call_to_mutual
+start(); fn start() = is_even(3); fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)}; fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)}
+---
+start();
+function start() { return is_even(3); }
+function is_even(n) { return (() => { const __match = n; if (__match === 0) { return true; } else if (true) { return is_odd(n - 1); } return undefined; })(); }
+function is_odd(n) { return (() => { const __match = n; if (__match === 0) { return false; } else if (true) { return is_even(n - 1); } return undefined; })(); }
