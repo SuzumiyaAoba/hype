@@ -6,9 +6,9 @@ fn arithmetic_and_lets() {
         "1 + 2 * 3",
         "(1 + 2) * (3 - 4 / 2)",
         "-1 + 2 * 3",
-        "let x = 1 + 2;\nlet y = x * 3;\ny - x",
-        "fn add(a, b) = a + b;\nlet x = add(2, 3);\nadd(x, 4)",
-        "let hello = \"hi\";\nhello + \"!\"",
+        "let x: Number = 1 + 2;\nlet y: Number = x * 3;\ny - x",
+        "fn add(a: Number, b: Number): Number = a + b;\nlet x: Number = add(2, 3);\nadd(x, 4)",
+        "let hello: String = \"hi\";\nhello + \"!\"",
     ];
 
     let mut out = String::new();

@@ -1,5 +1,6 @@
 use anstyle::{AnsiColor, Reset, Style};
 use logos::Logos;
+use std::collections::HashMap;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,6 +16,10 @@ pub enum Expr {
     Number(f64),
     Var(String),
     Str(String),
+    Call {
+        callee: String,
+        args: Vec<Expr>,
+    },
     Binary {
         op: BinOp,
         left: Box<Expr>,
@@ -24,8 +29,21 @@ pub enum Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let { name: String, expr: Expr },
+    Let { name: String, ty: Type, expr: Expr },
+    Fn {
+        name: String,
+        params: Vec<(String, Type)>,
+        ret: Type,
+        body: Expr,
+    },
     Expr(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    Number,
+    String,
+    Bool,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +87,10 @@ enum Tok {
     Semi,
     #[token("let")]
     Let,
+    #[token("fn")]
+    Fn,
+    #[token(":")]
+    Colon,
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
     #[regex(r"[ \t\r\n]+", logos::skip)]
@@ -86,15 +108,18 @@ pub fn transpile(input: &str) -> Result<String, ParseError> {
     let tokens = lex(input)?;
     let mut parser = Parser { tokens, pos: 0 };
     match parser.parse_program() {
-        Ok(stmts) => match parser.expect(Tok::Eof) {
-            Ok(_) => Ok(render_program(&stmts)),
-            Err(mut e) => {
-                if e.source.is_empty() {
-                    e.source = input.to_string();
+        Ok(stmts) => {
+            typecheck(&stmts, input)?;
+            match parser.expect(Tok::Eof) {
+                Ok(_) => Ok(render_program(&stmts)),
+                Err(mut e) => {
+                    if e.source.is_empty() {
+                        e.source = input.to_string();
+                    }
+                    Err(e)
                 }
-                Err(e)
             }
-        },
+        }
         Err(mut e) => {
             if e.source.is_empty() {
                 e.source = input.to_string();
@@ -163,13 +188,20 @@ impl Parser {
     fn parse_program(&mut self) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = Vec::new();
         while !matches!(self.peek().kind, Tok::Eof) {
-            if matches!(self.peek().kind, Tok::Let) {
-                stmts.push(self.parse_let()?);
-                self.optional_semi();
-            } else {
-                let expr = self.parse_expression(0)?;
-                stmts.push(Stmt::Expr(expr));
-                self.optional_semi();
+            match self.peek().kind {
+                Tok::Let => {
+                    stmts.push(self.parse_let()?);
+                    self.optional_semi();
+                }
+                Tok::Fn => {
+                    stmts.push(self.parse_fn()?);
+                    self.optional_semi();
+                }
+                _ => {
+                    let expr = self.parse_expression(0)?;
+                    stmts.push(Stmt::Expr(expr));
+                    self.optional_semi();
+                }
             }
         }
         Ok(stmts)
@@ -197,9 +229,95 @@ impl Parser {
                 })
             }
         };
+        self.expect(Tok::Colon)?;
+        let ty = self.parse_type()?;
         self.expect(Tok::Eq)?;
         let expr = self.parse_expression(0)?;
-        Ok(Stmt::Let { name, expr })
+        Ok(Stmt::Let { name, ty, expr })
+    }
+
+    fn parse_fn(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::Fn)?;
+        let name = match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected function name".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        self.expect(Tok::LParen)?;
+        let mut params = Vec::new();
+        if !matches!(self.peek().kind, Tok::RParen) {
+            loop {
+                let pname = match &self.peek().kind {
+                    Tok::Ident(s) => {
+                        let n = s.clone();
+                        self.advance();
+                        n
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: "expected parameter name".into(),
+                            span: self.peek().span.clone(),
+                            source: String::new(),
+                        })
+                    }
+                };
+                self.expect(Tok::Colon)?;
+                let pty = self.parse_type()?;
+                params.push((pname, pty));
+                if matches!(self.peek().kind, Tok::Comma) {
+                    self.advance();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+        self.expect(Tok::RParen)?;
+        self.expect(Tok::Colon)?;
+        let ret = self.parse_type()?;
+        self.expect(Tok::Eq)?;
+        let body = self.parse_expression(0)?;
+        Ok(Stmt::Fn {
+            name,
+            params,
+            ret,
+            body,
+        })
+    }
+
+    fn parse_type(&mut self) -> Result<Type, ParseError> {
+        match &self.peek().kind {
+            Tok::Ident(name) => {
+                let ty = match name.as_str() {
+                    "Number" => Type::Number,
+                    "String" => Type::String,
+                    "Bool" => Type::Bool,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("unknown type '{}'", name),
+                            span: self.peek().span.clone(),
+                            source: String::new(),
+                        })
+                    }
+                };
+                self.advance();
+                Ok(ty)
+            }
+            _ => Err(ParseError {
+                message: "expected type".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
     }
 
     fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
@@ -285,6 +403,10 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
         }
         Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
         Expr::Var(name) => name.clone(),
+        Expr::Call { callee, args } => {
+            let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
+            format!("{callee}({})", rendered_args.join(", "))
+        }
         Expr::Binary { op, left, right } => {
             let prec = match op {
                 BinOp::Add | BinOp::Sub => 1,
@@ -409,9 +531,17 @@ fn render_program(stmts: &[Stmt]) -> String {
     let mut lines = Vec::new();
     for (i, stmt) in stmts.iter().enumerate() {
         match stmt {
-            Stmt::Let { name, expr } => {
+            Stmt::Let { name, expr, .. } => {
                 let js = render_js(expr, 0);
                 lines.push(format!("let {name} = {js};"));
+            }
+            Stmt::Fn { name, params, body, .. } => {
+                let js_body = render_js(body, 0);
+                let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
+                lines.push(format!(
+                    "function {name}({}) {{ return {js_body}; }}",
+                    param_list.join(", ")
+                ));
             }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
@@ -438,6 +568,152 @@ fn escape_js_str(s: &str) -> String {
             other => vec![other],
         })
         .collect()
+}
+
+#[derive(Debug, Clone)]
+struct FnSig {
+    params: Vec<Type>,
+    ret: Type,
+}
+
+fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
+    let mut fns: HashMap<String, FnSig> = HashMap::new();
+    for stmt in stmts {
+        if let Stmt::Fn { name, params, ret, .. } = stmt {
+            if fns.contains_key(name) {
+                return Err(ParseError {
+                    message: format!("duplicate function '{}'", name),
+                    span: 0..0,
+                    source: source.to_string(),
+                });
+            }
+            let param_tys = params.iter().map(|(_, t)| t.clone()).collect();
+            fns.insert(
+                name.clone(),
+                FnSig {
+                    params: param_tys,
+                    ret: ret.clone(),
+                },
+            );
+        }
+    }
+
+    let mut vars: HashMap<String, Type> = HashMap::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, ty, expr } => {
+                let expr_ty = type_of_expr(expr, &vars, &fns, source)?;
+                if &expr_ty != ty {
+                    return Err(ParseError {
+                        message: format!("type mismatch: expected {:?}, found {:?}", ty, expr_ty),
+                        span: 0..0,
+                        source: source.to_string(),
+                    });
+                }
+                vars.insert(name.clone(), ty.clone());
+            }
+            Stmt::Fn { name: _, params, ret, body } => {
+                let mut local = vars.clone();
+                for (pname, pty) in params {
+                    local.insert(pname.clone(), pty.clone());
+                }
+                let body_ty = type_of_expr(body, &local, &fns, source)?;
+                if &body_ty != ret {
+                    return Err(ParseError {
+                        message: format!(
+                            "type mismatch in function body: expected {:?}, found {:?}",
+                            ret, body_ty
+                        ),
+                        span: 0..0,
+                        source: source.to_string(),
+                    });
+                }
+            }
+            Stmt::Expr(expr) => {
+                let _ = type_of_expr(expr, &vars, &fns, source)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn type_of_expr(
+    expr: &Expr,
+    vars: &HashMap<String, Type>,
+    fns: &HashMap<String, FnSig>,
+    source: &str,
+) -> Result<Type, ParseError> {
+    match expr {
+        Expr::Number(_) => Ok(Type::Number),
+        Expr::Str(_) => Ok(Type::String),
+        Expr::Var(name) => vars.get(name).cloned().ok_or_else(|| ParseError {
+            message: format!("unbound variable '{}'", name),
+            span: 0..0,
+            source: source.to_string(),
+        }),
+        Expr::Binary { op, left, right } => {
+            let lt = type_of_expr(left, vars, fns, source)?;
+            let rt = type_of_expr(right, vars, fns, source)?;
+            match op {
+                BinOp::Add => {
+                    if lt == Type::Number && rt == Type::Number {
+                        Ok(Type::Number)
+                    } else if lt == Type::String && rt == Type::String {
+                        Ok(Type::String)
+                    } else {
+                        Err(ParseError {
+                            message: "type mismatch for '+'".into(),
+                            span: 0..0,
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                    if lt == Type::Number && rt == Type::Number {
+                        Ok(Type::Number)
+                    } else {
+                        Err(ParseError {
+                            message: "numeric operator requires Number".into(),
+                            span: 0..0,
+                            source: source.to_string(),
+                        })
+                    }
+                }
+            }
+        }
+        Expr::Call { callee, args } => {
+            let sig = fns.get(callee).ok_or_else(|| ParseError {
+                message: format!("unknown function '{}'", callee),
+                span: 0..0,
+                source: source.to_string(),
+            })?;
+            if sig.params.len() != args.len() {
+                return Err(ParseError {
+                    message: format!(
+                        "arity mismatch: expected {}, found {}",
+                        sig.params.len(),
+                        args.len()
+                    ),
+                    span: 0..0,
+                    source: source.to_string(),
+                });
+            }
+            for (arg, expected) in args.iter().zip(sig.params.iter()) {
+                let aty = type_of_expr(arg, vars, fns, source)?;
+                if &aty != expected {
+                    return Err(ParseError {
+                        message: format!(
+                            "type mismatch in argument: expected {:?}, found {:?}",
+                            expected, aty
+                        ),
+                        span: 0..0,
+                        source: source.to_string(),
+                    });
+                }
+            }
+            Ok(sig.ret.clone())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -474,7 +750,7 @@ mod tests {
 
     #[test]
     fn lets_and_vars() {
-        let out = js("let x = 1+2; let y = x*3; y - x");
+        let out = js("let x: Number = 1+2; let y: Number = x*3; y - x");
         assert_eq!(out, "let x = 1 + 2;\nlet y = x * 3;\ny - x");
     }
 }
