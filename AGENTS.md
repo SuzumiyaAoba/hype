@@ -6,6 +6,7 @@
   - 回答は日本語で簡潔かつ丁寧に行うこと。
   - 不明点や曖昧さは必ず確認し、無断で破壊的操作（リセット/クリーン等）は行わない。
   - 既存の未コミット変更は尊重し、巻き戻さない。
+  - 作業状況は常に GitHub Project「Kanban for AI」（#4）に反映すること（Backlog→In Progress→Done）。
 
 - プロジェクト構造/技術スタック
   - Rust 2024 edition。主要依存: clap, logos, rustyline, thiserror, anstyle, insta（テスト）。
