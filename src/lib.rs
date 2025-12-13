@@ -1,6 +1,7 @@
 use anstyle::{AnsiColor, Reset, Style};
 use logos::Logos;
 use std::collections::HashMap;
+use std::io::Write;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +95,22 @@ impl std::error::Error for ParseError {}
 pub struct DebugInfo {
     pub steps: Vec<String>,
     pub annotated_source: Option<String>,
+}
+
+/// デバッグ出力の組み立て（テキスト化）。スナップショットテストでも利用する。
+pub fn render_debug_text(info: &DebugInfo) -> String {
+    let mut buf = String::new();
+    if let Some(annot) = &info.annotated_source {
+        buf.push_str("== annotated ==\n");
+        buf.push_str(annot);
+        buf.push_str("\n\n");
+    }
+    buf.push_str("== steps ==\n");
+    for step in &info.steps {
+        buf.push_str(step);
+        buf.push('\n');
+    }
+    buf
 }
 
 #[derive(Logos, Debug, Clone, PartialEq)]
@@ -225,30 +242,24 @@ fn debug_requested_from_env() -> Option<DebugInfo> {
 fn dump_debug_outputs(info: &DebugInfo) {
     if let Ok(path) = std::env::var("HYPE_INFER_LOG") {
         if !path.is_empty() {
-            let mut buf = String::new();
-            if let Some(annot) = &info.annotated_source {
-                buf.push_str("== annotated ==\n");
-                buf.push_str(annot);
-                buf.push_str("\n\n");
-            }
-            buf.push_str("== steps ==\n");
-            for step in &info.steps {
-                buf.push_str(step);
-                buf.push('\n');
-            }
-            if let Err(e) = std::fs::write(&path, buf) {
-                eprintln!("failed to write debug log to {path}: {e}");
-            }
+            let text = render_debug_text(info);
+            write_output(&path, &text);
         }
     }
     if let Ok(path) = std::env::var("HYPE_INFER_ANNOTATED_OUT") {
         if !path.is_empty() {
             if let Some(annot) = &info.annotated_source {
-                if let Err(e) = std::fs::write(&path, annot) {
-                    eprintln!("failed to write annotated output to {path}: {e}");
-                }
+                write_output(&path, annot);
             }
         }
+    }
+}
+
+fn write_output(target: &str, content: &str) {
+    if target == "-" {
+        let _ = std::io::stdout().write_all(content.as_bytes());
+    } else if let Err(e) = std::fs::write(target, content) {
+        eprintln!("failed to write debug output to {target}: {e}");
     }
 }
 
