@@ -9,6 +9,8 @@ fn arithmetic_and_lets() {
         "let x: Number = 1 + 2;\nlet y: Number = x * 3;\ny - x",
         "fn add(a: Number, b: Number): Number = a + b;\nlet x: Number = add(2, 3);\nadd(x, 4)",
         "let hello: String = \"hi\";\nhello + \"!\"",
+        "let x = 1 + 2;\nx",
+        "fn add1(a: Number) = a + 1;\nadd1(2)",
     ];
 
     let mut out = String::new();

@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/arithmetic.rs
-assertion_line: 26
+assertion_line: 28
 expression: out
 ---
 1 + 2 * 3
@@ -36,3 +36,15 @@ hello + "!"
 ---
 let hello = "hi";
 hello + "!"
+===
+let x = 1 + 2;
+x
+---
+let x = 1 + 2;
+x
+===
+fn add1(a: Number) = a + 1;
+add1(2)
+---
+function add1(a) { return a + 1; }
+add1(2)
