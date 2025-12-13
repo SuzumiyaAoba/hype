@@ -21,10 +21,16 @@ pub enum BinOp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Range<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprKind {
     Number(f64),
     Bool(bool),
-    Var { name: String, span: Range<usize> },
+    Var { name: String },
     Str(String),
     Block(Vec<Stmt>),
     Match {
@@ -307,10 +313,11 @@ impl Parser {
         }
     }
 
-    fn expect(&mut self, expected: Tok) -> Result<(), ParseError> {
+    fn expect(&mut self, expected: Tok) -> Result<Range<usize>, ParseError> {
         if std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(&expected) {
+            let span = self.peek().span.clone();
             self.advance();
-            Ok(())
+            Ok(span)
         } else {
             Err(ParseError {
                 message: format!("expected {:?}, found {:?}", expected, self.peek().kind),
@@ -349,7 +356,7 @@ impl Parser {
     }
 
     fn parse_let(&mut self) -> Result<Stmt, ParseError> {
-        self.expect(Tok::Let)?;
+        let _let_span = self.expect(Tok::Let)?;
         let name = match &self.peek().kind {
             Tok::Ident(s) => {
                 let n = s.clone();
@@ -473,10 +480,14 @@ impl Parser {
             let next_min_prec = prec + 1;
             self.advance();
             let right = self.parse_expression(next_min_prec)?;
-            left = Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
+            let span = left.span.start..right.span.end;
+            left = Expr {
+                span: span.clone(),
+                kind: ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             };
         }
 
@@ -487,21 +498,37 @@ impl Parser {
         match &self.peek().kind {
             Tok::Number(n) => {
                 let value = *n;
+                let span = self.peek().span.clone();
                 self.advance();
-                Ok(Expr::Number(value))
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Number(value),
+                })
             }
             Tok::True => {
+                let span = self.peek().span.clone();
                 self.advance();
-                Ok(Expr::Bool(true))
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Bool(true),
+                })
             }
             Tok::False => {
+                let span = self.peek().span.clone();
                 self.advance();
-                Ok(Expr::Bool(false))
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Bool(false),
+                })
             }
             Tok::Str(raw) => {
                 let inner = raw.trim_matches('"').to_string();
+                let span = self.peek().span.clone();
                 self.advance();
-                Ok(Expr::Str(inner))
+                Ok(Expr {
+                    span,
+                    kind: ExprKind::Str(inner),
+                })
             }
             Tok::LBrace => self.parse_block_expr(),
             Tok::Match => self.parse_match_expr(),
@@ -524,31 +551,48 @@ impl Parser {
                             }
                         }
                     }
-                    self.expect(Tok::RParen)?;
-                    Ok(Expr::Call {
-                        callee: n,
-                        callee_span: span,
-                        args,
+                    let rparen_span = self.expect(Tok::RParen)?;
+                    Ok(Expr {
+                        span: span.start..rparen_span.end,
+                        kind: ExprKind::Call {
+                            callee: n,
+                            callee_span: span,
+                            args,
+                        },
                     })
                 } else {
-                    Ok(Expr::Var { name: n, span })
+                    Ok(Expr {
+                        span: span.clone(),
+                        kind: ExprKind::Var { name: n },
+                    })
                 }
             }
             Tok::Minus => {
                 // unary minus
+                let start = self.peek().span.start;
                 self.advance();
                 let expr = self.parse_expression(7)?;
-                Ok(Expr::Binary {
-                    op: BinOp::Sub,
-                    left: Box::new(Expr::Number(0.0)),
-                    right: Box::new(expr),
+                Ok(Expr {
+                    span: start..expr.span.end,
+                    kind: ExprKind::Binary {
+                        op: BinOp::Sub,
+                        left: Box::new(Expr {
+                            span: start..start,
+                            kind: ExprKind::Number(0.0),
+                        }),
+                        right: Box::new(expr),
+                    },
                 })
             }
             Tok::LParen => {
+                let start = self.peek().span.start;
                 self.advance();
                 let expr = self.parse_expression(0)?;
-                self.expect(Tok::RParen)?;
-                Ok(expr)
+                let end_span = self.expect(Tok::RParen)?;
+                Ok(Expr {
+                    span: start..end_span.end,
+                    kind: expr.kind,
+                })
             }
             _ => Err(ParseError {
                 message: "expected expression".into(),
@@ -559,7 +603,7 @@ impl Parser {
     }
 
     fn parse_block_expr(&mut self) -> Result<Expr, ParseError> {
-        self.expect(Tok::LBrace)?;
+        let start = self.expect(Tok::LBrace)?.start;
         let mut stmts = Vec::new();
         while !matches!(self.peek().kind, Tok::RBrace) {
             if matches!(self.peek().kind, Tok::Let) {
@@ -571,7 +615,7 @@ impl Parser {
                 self.optional_semi();
             }
         }
-        self.expect(Tok::RBrace)?;
+        let end = self.expect(Tok::RBrace)?.end;
         if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
             return Err(ParseError {
                 message: "block must end with expression".into(),
@@ -579,14 +623,17 @@ impl Parser {
                 source: String::new(),
             });
         }
-        Ok(Expr::Block(stmts))
+        Ok(Expr {
+            span: start..end,
+            kind: ExprKind::Block(stmts),
+        })
     }
 
     fn parse_match_expr(&mut self) -> Result<Expr, ParseError> {
-        self.expect(Tok::Match)?;
+        let start = self.expect(Tok::Match)?.start;
         self.expect(Tok::LParen)?;
         let expr = self.parse_expression(0)?;
-        self.expect(Tok::RParen)?;
+        let _ = self.expect(Tok::RParen)?;
         self.expect(Tok::LBrace)?;
         let mut arms = Vec::new();
         while !matches!(self.peek().kind, Tok::RBrace) {
@@ -597,7 +644,7 @@ impl Parser {
             arms.push(MatchArm { pat, expr: body });
             self.optional_semi();
         }
-        self.expect(Tok::RBrace)?;
+        let end = self.expect(Tok::RBrace)?.end;
         if arms.is_empty() {
             return Err(ParseError {
                 message: "match requires at least one arm".into(),
@@ -605,9 +652,12 @@ impl Parser {
                 source: String::new(),
             });
         }
-        Ok(Expr::Match {
-            expr: Box::new(expr),
-            arms,
+        Ok(Expr {
+            span: start..end,
+            kind: ExprKind::Match {
+                expr: Box::new(expr),
+                arms,
+            },
         })
     }
 
@@ -752,20 +802,20 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
 }
 
 fn render_js(expr: &Expr, parent_prec: u8) -> String {
-    match expr {
-        Expr::Number(n) => {
+    match &expr.kind {
+        ExprKind::Number(n) => {
             render_number_literal(*n)
         }
-        Expr::Bool(b) => format!("{b}"),
-        Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
-        Expr::Var { name, .. } => name.clone(),
-        Expr::Call { callee, args, .. } => {
+        ExprKind::Bool(b) => format!("{b}"),
+        ExprKind::Str(s) => format!("\"{}\"", escape_js_str(s)),
+        ExprKind::Var { name } => name.clone(),
+        ExprKind::Call { callee, args, .. } => {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
             format!("{callee}({})", rendered_args.join(", "))
         }
-        Expr::Block(stmts) => render_block(stmts),
-        Expr::Match { expr, arms } => render_match(expr, arms),
-        Expr::Binary { op, left, right } => {
+        ExprKind::Block(stmts) => render_block(stmts),
+        ExprKind::Match { expr, arms } => render_match(expr, arms),
+        ExprKind::Binary { op, left, right } => {
             let prec = binop_precedence(op);
             let op_str = binop_symbol(op);
             let l = render_js(left, prec);
@@ -1030,7 +1080,7 @@ fn typecheck(
             Stmt::Let { name, ty, expr } => {
                 let expr_ty = type_of_expr(expr, &vars, &fns, source, debug.as_deref_mut())?;
                 if let Some(t) = ty {
-                    unify_or_error(t, &expr_ty, source, "type mismatch for let binding")?;
+                    unify_or_error(t, &expr_ty, source, "type mismatch for let binding", &expr.span)?;
                     vars.insert(name.clone(), t.clone());
                     log_debug(
                         debug.as_deref_mut(),
@@ -1052,7 +1102,7 @@ fn typecheck(
                 let body_ty = type_of_expr(body, &local, &fns, source, debug.as_deref_mut())?;
                 let sig = fns.get_mut(name).expect("fn sig exists");
                 if let Some(r) = ret {
-                    unify_or_error(r, &body_ty, source, "type mismatch in function body")?;
+                    unify_or_error(r, &body_ty, source, "type mismatch in function body", &body.span)?;
                     sig.ret = r.clone();
                     log_debug(
                         debug.as_deref_mut(),
@@ -1074,13 +1124,19 @@ fn typecheck(
     Ok(TypeEnv { vars, fns })
 }
 
-fn unify_or_error(expected: &Type, found: &Type, source: &str, msg: &str) -> Result<(), ParseError> {
+fn unify_or_error(
+    expected: &Type,
+    found: &Type,
+    source: &str,
+    msg: &str,
+    span: &Range<usize>,
+) -> Result<(), ParseError> {
     if let Some(_) = unify(expected, found) {
         Ok(())
     } else {
         Err(ParseError {
             message: format!("{msg}: expected {:?}, found {:?}", expected, found),
-            span: 0..0,
+            span: span.clone(),
             source: source.to_string(),
         })
     }
@@ -1103,18 +1159,18 @@ fn type_of_expr(
     source: &str,
     mut debug: Option<&mut DebugInfo>,
 ) -> Result<Type, ParseError> {
-    match expr {
-        Expr::Number(_) => Ok(Type::Number),
-        Expr::Bool(_) => Ok(Type::Bool),
-        Expr::Str(_) => Ok(Type::String),
-        Expr::Block(stmts) => type_of_block(stmts, vars, fns, source, debug),
-        Expr::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source, debug),
-        Expr::Var { name, span } => vars.get(name).cloned().ok_or_else(|| ParseError {
+    match &expr.kind {
+        ExprKind::Number(_) => Ok(Type::Number),
+        ExprKind::Bool(_) => Ok(Type::Bool),
+        ExprKind::Str(_) => Ok(Type::String),
+        ExprKind::Block(stmts) => type_of_block(stmts, vars, fns, source, debug, &expr.span),
+        ExprKind::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source, debug, &expr.span),
+        ExprKind::Var { name } => vars.get(name).cloned().ok_or_else(|| ParseError {
             message: format!("unbound variable '{}'", name),
-            span: span.clone(),
+            span: expr.span.clone(),
             source: source.to_string(),
         }),
-        Expr::Binary { op, left, right } => {
+        ExprKind::Binary { op, left, right } => {
             let lt = type_of_expr(left, vars, fns, source, debug.as_deref_mut())?;
             let rt = type_of_expr(right, vars, fns, source, debug.as_deref_mut())?;
             match op {
@@ -1125,21 +1181,21 @@ fn type_of_expr(
                             Type::String => Ok(Type::String),
                             _ => Err(ParseError {
                                 message: "type mismatch for '+'".into(),
-                                span: 0..0,
+                                span: expr.span.clone(),
                                 source: source.to_string(),
                             }),
                         }
                     } else {
                         Err(ParseError {
                             message: "type mismatch for '+'".into(),
-                            span: 0..0,
+                            span: expr.span.clone(),
                             source: source.to_string(),
                         })
                     }
                 }
                 BinOp::Sub | BinOp::Mul | BinOp::Div => {
-                    unify_or_error(&Type::Number, &lt, source, "numeric operator requires Number")?;
-                    unify_or_error(&Type::Number, &rt, source, "numeric operator requires Number")?;
+                    unify_or_error(&Type::Number, &lt, source, "numeric operator requires Number", &expr.span)?;
+                    unify_or_error(&Type::Number, &rt, source, "numeric operator requires Number", &expr.span)?;
                     Ok(Type::Number)
                 }
                 BinOp::Eq | BinOp::Ne => {
@@ -1148,24 +1204,24 @@ fn type_of_expr(
                     } else {
                         Err(ParseError {
                             message: "equality requires operands of the same type".into(),
-                            span: 0..0,
+                            span: expr.span.clone(),
                             source: source.to_string(),
                         })
                     }
                 }
                 BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
-                    unify_or_error(&Type::Number, &lt, source, "comparison requires Number operands")?;
-                    unify_or_error(&Type::Number, &rt, source, "comparison requires Number operands")?;
+                    unify_or_error(&Type::Number, &lt, source, "comparison requires Number operands", &expr.span)?;
+                    unify_or_error(&Type::Number, &rt, source, "comparison requires Number operands", &expr.span)?;
                     Ok(Type::Bool)
                 }
                 BinOp::And | BinOp::Or => {
-                    unify_or_error(&Type::Bool, &lt, source, "logical operator requires Bool")?;
-                    unify_or_error(&Type::Bool, &rt, source, "logical operator requires Bool")?;
+                    unify_or_error(&Type::Bool, &lt, source, "logical operator requires Bool", &expr.span)?;
+                    unify_or_error(&Type::Bool, &rt, source, "logical operator requires Bool", &expr.span)?;
                     Ok(Type::Bool)
                 }
             }
         }
-        Expr::Call { callee, callee_span, args } => {
+        ExprKind::Call { callee, callee_span, args } => {
             let sig = fns.get(callee).ok_or_else(|| ParseError {
                 message: format!("unknown function '{}'", callee),
                 span: callee_span.clone(),
@@ -1178,7 +1234,7 @@ fn type_of_expr(
                         sig.params.len(),
                         args.len()
                     ),
-                    span: 0..0,
+                    span: expr.span.clone(),
                     source: source.to_string(),
                 });
             }
@@ -1190,7 +1246,7 @@ fn type_of_expr(
                             "type mismatch in argument: expected {:?}, found {:?}",
                             expected, aty
                         ),
-                        span: 0..0,
+                        span: arg.span.clone(),
                         source: source.to_string(),
                     });
                 }
@@ -1206,11 +1262,12 @@ fn type_of_block(
     fns: &HashMap<String, FnSig>,
     source: &str,
     mut debug: Option<&mut DebugInfo>,
+    span: &Range<usize>,
 ) -> Result<Type, ParseError> {
     if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
         return Err(ParseError {
             message: "block must end with expression".into(),
-            span: 0..0,
+            span: span.clone(),
             source: source.to_string(),
         });
     }
@@ -1221,7 +1278,7 @@ fn type_of_block(
             Stmt::Let { name, ty, expr } => {
                 let expr_ty = type_of_expr(expr, &local, fns, source, debug.as_deref_mut())?;
                 if let Some(t) = ty {
-                    unify_or_error(t, &expr_ty, source, "type mismatch in block let")?;
+                    unify_or_error(t, &expr_ty, source, "type mismatch in block let", &expr.span)?;
                     local.insert(name.clone(), t.clone());
                 } else {
                     local.insert(name.clone(), expr_ty);
@@ -1242,7 +1299,7 @@ fn type_of_block(
     }
     last_ty.ok_or_else(|| ParseError {
         message: "block must end with expression".into(),
-        span: 0..0,
+        span: span.clone(),
         source: source.to_string(),
     })
 }
@@ -1251,6 +1308,7 @@ fn ensure_pattern_matches(
     pat: &Pattern,
     ty: &Type,
     source: &str,
+    span: &Range<usize>,
 ) -> Result<(), ParseError> {
     let ok = match pat {
         Pattern::Wildcard => true,
@@ -1264,7 +1322,7 @@ fn ensure_pattern_matches(
     } else {
         Err(ParseError {
             message: format!("pattern does not match type {:?}", ty),
-            span: 0..0,
+            span: span.clone(),
             source: source.to_string(),
         })
     }
@@ -1277,11 +1335,12 @@ fn type_of_match(
     fns: &HashMap<String, FnSig>,
     source: &str,
     mut debug: Option<&mut DebugInfo>,
+    span: &Range<usize>,
 ) -> Result<Type, ParseError> {
     if arms.is_empty() {
         return Err(ParseError {
             message: "match requires at least one arm".into(),
-            span: 0..0,
+            span: span.clone(),
             source: source.to_string(),
         });
     }
@@ -1289,7 +1348,7 @@ fn type_of_match(
     let scrutinee_ty = type_of_expr(expr, vars, fns, source, debug.as_deref_mut())?;
     let mut result_ty: Option<Type> = None;
     for arm in arms {
-        ensure_pattern_matches(&arm.pat, &scrutinee_ty, source)?;
+        ensure_pattern_matches(&arm.pat, &scrutinee_ty, source, span)?;
         let ty = type_of_expr(&arm.expr, vars, fns, source, debug.as_deref_mut())?;
         if let Some(prev) = &result_ty {
             if let Some(u) = unify(prev, &ty) {
@@ -1300,7 +1359,7 @@ fn type_of_match(
                         "match arms must have the same type, found {:?} and {:?}",
                         prev, ty
                     ),
-                    span: 0..0,
+                    span: arm.expr.span.clone(),
                     source: source.to_string(),
                 });
             }
@@ -1311,7 +1370,7 @@ fn type_of_match(
 
     result_ty.ok_or_else(|| ParseError {
         message: "match requires at least one arm".into(),
-        span: 0..0,
+        span: span.clone(),
         source: source.to_string(),
     })
 }
@@ -1427,5 +1486,29 @@ mod tests {
     fn block_scope_unbound_span() {
         let err = transpile("{ let x: Number = 1; x } + x").unwrap_err();
         assert_eq!(err.span, 27..28);
+    }
+
+    #[test]
+    fn let_type_mismatch_span() {
+        let err = transpile("let x: Number = true").unwrap_err();
+        assert_eq!(err.span, 16..20);
+    }
+
+    #[test]
+    fn arg_type_mismatch_span() {
+        let err = transpile("fn f(a: Number): Number = a; f(true)").unwrap_err();
+        assert_eq!(err.span, 31..35);
+    }
+
+    #[test]
+    fn binop_type_mismatch_span() {
+        let err = transpile("1 + true").unwrap_err();
+        assert_eq!(err.span, 0..8);
+    }
+
+    #[test]
+    fn fn_body_mismatch_span() {
+        let err = transpile("fn f(): Number = true").unwrap_err();
+        assert_eq!(err.span, 17..21);
     }
 }
