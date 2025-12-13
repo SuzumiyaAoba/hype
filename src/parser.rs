@@ -73,6 +73,12 @@ impl Parser {
 
     fn parse_let(&mut self) -> Result<Stmt, ParseError> {
         let _let_span = self.expect(Tok::Let)?;
+        let recursive = if matches!(self.peek().kind, Tok::Rec) {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let name = match &self.peek().kind {
             Tok::Ident(s) => {
                 let n = s.clone();
@@ -95,7 +101,7 @@ impl Parser {
         };
         self.expect(Tok::Eq)?;
         let expr = self.parse_expression(0)?;
-        Ok(Stmt::Let { name, ty, expr })
+        Ok(Stmt::Let { name, ty, expr, recursive })
     }
 
     fn parse_fn(&mut self) -> Result<Stmt, ParseError> {

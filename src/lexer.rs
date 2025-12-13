@@ -55,6 +55,8 @@ pub(crate) enum Tok {
     Underscore,
     #[token("\\")]
     Backslash,
+    #[token("rec")]
+    Rec,
     #[token("match")]
     Match,
     #[token("case")]

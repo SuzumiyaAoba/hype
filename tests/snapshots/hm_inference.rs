@@ -34,6 +34,14 @@ fn transformations() {
             "forward_call_to_mutual",
             "start(); fn start() = is_even(3); fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)}; fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)}",
         ),
+        (
+            "let_rec_factorial",
+            "let rec fact = \\n -> match(n){case 0 => 1; case _ => n * fact(n - 1)}; fact(5)",
+        ),
+        (
+            "let_rec_in_block",
+            "{ let rec sum = \\n -> match(n){case 0 => 0; case _ => n + sum(n - 1)}; sum(3) }",
+        ),
     ];
 
     let mut out = String::new();
