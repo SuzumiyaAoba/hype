@@ -300,6 +300,25 @@ fn infer_expr(
             s = s.compose(&su);
             Ok((s.apply(&ret_ty), s))
         }
+        ExprKind::Lambda { params, body } => {
+            let mut s = Subst::new();
+            let mut env_fn = env.clone();
+            let mut param_types = Vec::new();
+            for (pname, pty) in params {
+                let pt = if let Some(t) = pty {
+                    s.apply(t)
+                } else {
+                    state.fresh_var()
+                };
+                param_types.push(pt.clone());
+                env_fn.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt });
+            }
+            let (body_ty, sb) = infer_expr(body, &env_fn, state, source)?;
+            s = s.compose(&sb);
+            let body_ty = s.apply(&body_ty);
+            let fn_ty = Type::Fun(param_types.into_iter().map(|p| s.apply(&p)).collect(), Box::new(body_ty));
+            Ok((fn_ty, s))
+        }
         ExprKind::Block(stmts) => infer_block(stmts, env, state, source, &expr.span),
         ExprKind::Match { expr, arms } => infer_match(expr, arms, env, state, source, &expr.span),
     }

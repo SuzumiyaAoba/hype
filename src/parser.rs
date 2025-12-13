@@ -225,6 +225,7 @@ impl Parser {
                     kind: ExprKind::Number(value),
                 })
             }
+            Tok::Backslash => self.parse_lambda_expr(),
             Tok::True => {
                 let span = self.peek().span.clone();
                 self.advance();
@@ -319,6 +320,77 @@ impl Parser {
                 source: String::new(),
             }),
         }
+    }
+
+    fn parse_lambda_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect(Tok::Backslash)?.start;
+        let mut params = Vec::new();
+        if matches!(self.peek().kind, Tok::LParen) {
+            self.advance();
+            if !matches!(self.peek().kind, Tok::RParen) {
+                loop {
+                    let pname = match &self.peek().kind {
+                        Tok::Ident(s) => {
+                            let n = s.clone();
+                            self.advance();
+                            n
+                        }
+                        _ => {
+                            return Err(ParseError {
+                                message: "expected parameter name".into(),
+                                span: self.peek().span.clone(),
+                                source: String::new(),
+                            })
+                        }
+                    };
+                    let pty = if matches!(self.peek().kind, Tok::Colon) {
+                        self.advance();
+                        Some(self.parse_type()?)
+                    } else {
+                        None
+                    };
+                    params.push((pname, pty));
+                    if matches!(self.peek().kind, Tok::Comma) {
+                        self.advance();
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            self.expect(Tok::RParen)?;
+        } else {
+            let pname = match &self.peek().kind {
+                Tok::Ident(s) => {
+                    let n = s.clone();
+                    self.advance();
+                    n
+                }
+                _ => {
+                    return Err(ParseError {
+                        message: "expected parameter name".into(),
+                        span: self.peek().span.clone(),
+                        source: String::new(),
+                    })
+                }
+            };
+            let pty = if matches!(self.peek().kind, Tok::Colon) {
+                self.advance();
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+            params.push((pname, pty));
+        }
+        self.expect(Tok::ThinArrow)?;
+        let body = self.parse_expression(0)?;
+        Ok(Expr {
+            span: start..body.span.end,
+            kind: ExprKind::Lambda {
+                params,
+                body: Box::new(body),
+            },
+        })
     }
 
     fn current_binop(&self) -> Option<(crate::ast::BinOp, u8)> {

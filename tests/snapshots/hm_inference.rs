@@ -21,6 +21,11 @@ fn transformations() {
             "mutual_even_odd",
             "fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)};\nfn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)};\nis_even(4); is_odd(5)",
         ),
+        ("lambda_let", "let id = \\x -> x; id(3)"),
+        (
+            "lambda_closure",
+            "fn wrap(x) = { let add = \\y -> x + y; add }; wrap(1)",
+        ),
     ];
 
     let mut out = String::new();

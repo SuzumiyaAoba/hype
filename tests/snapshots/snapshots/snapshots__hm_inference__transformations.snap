@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 39
+assertion_line: 44
 expression: out
 ---
 polymorphic_fn
@@ -39,3 +39,15 @@ function is_even(n) { return (() => { const __match = n; if (__match === 0) { re
 function is_odd(n) { return (() => { const __match = n; if (__match === 0) { return false; } else if (true) { return is_even(n - 1); } return undefined; })(); }
 is_even(4);
 is_odd(5)
+===
+lambda_let
+let id = \x -> x; id(3)
+---
+let id = (function(x) { return x; });
+id(3)
+===
+lambda_closure
+fn wrap(x) = { let add = \y -> x + y; add }; wrap(1)
+---
+function wrap(x) { return (() => { let add = (function(y) { return x + y; }); return add; })(); }
+wrap(1)
