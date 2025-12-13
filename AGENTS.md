@@ -16,9 +16,8 @@
   - テスト: `cargo test`（スナップショット含む）
 
 - Nix/開発環境
-  - GitHub CLI `gh` が利用可能。Project #4 の操作時は `--owner SuzumiyaAoba --number 4` を付ける。
-  - `nix develop` で Rust ツールチェーン（rustc/cargo/rustfmt/clippy 等）入りの dev shell を利用可能。
-  - シェル起動時にバージョン表示の hook が走る。
+  - GitHub CLI `gh` が利用可能。Project #4 操作時は `--owner SuzumiyaAoba --number 4` を付ける。project スコープ不足で失敗する場合はトークン権限を確認する。
+  - `nix develop` で Rust ツールチェーン（rustc/cargo/rustfmt/clippy 等）入りの dev shell を利用可能。シェル起動時にバージョン表示の hook が走る。
 
 - 開発/コード方針
   - 既存のスタイルに合わせ、必要最小限のコメントのみ追加する（ASCII を基本）。
