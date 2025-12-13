@@ -1,12 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-<<<<<<< HEAD
 assertion_line: 60
-||||||| f8b143b
-assertion_line: 44
-=======
-assertion_line: 52
->>>>>>> origin/main
 expression: out
 ---
 polymorphic_fn
