@@ -23,15 +23,15 @@ let x = 1 + 2;
 let y = x * 3;
 y - x
 ===
-fn add(a, b) = a + b;
-let x = add(2, 3);
+fn add(a: Number, b: Number): Number = a + b;
+let x: Number = add(2, 3);
 add(x, 4)
 ---
 function add(a, b) { return a + b; }
 let x = add(2, 3);
 add(x, 4)
 ===
-let hello = "hi";
+let hello: String = "hi";
 hello + "!"
 ---
 let hello = "hi";
