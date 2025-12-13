@@ -65,6 +65,10 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
         }
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Str(s) => format!("\"{}\"", escape_js_str(s)),
+        ExprKind::Tuple(items) => {
+            let parts: Vec<String> = items.iter().map(|e| render_js(e, 0)).collect();
+            format!("[{}]", parts.join(", "))
+        }
         ExprKind::Var { name } => name.clone(),
         ExprKind::Call { callee, args, .. } => {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
@@ -149,6 +153,14 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
         crate::ast::Pattern::Bool(b) => format!("{var} === {b}"),
         crate::ast::Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
         crate::ast::Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
+        crate::ast::Pattern::Tuple(items) => {
+            let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length === {}", items.len())];
+            for (i, pat) in items.iter().enumerate() {
+                let inner_var = format!("{var}[{i}]");
+                conds.push(render_pattern_condition(&inner_var, pat));
+            }
+            conds.join(" && ")
+        }
     }
 }
 

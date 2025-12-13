@@ -42,6 +42,11 @@ fn transformations() {
             "let_rec_in_block",
             "{ let rec sum = \\n -> match(n){case 0 => 0; case _ => n + sum(n - 1)}; sum(3) }",
         ),
+        ("tuple_literal", "(1, true, \"s\")"),
+        (
+            "tuple_pattern_match",
+            "match((1, true)){case (1, true) => 0; case _ => 1}",
+        ),
     ];
 
     let mut out = String::new();

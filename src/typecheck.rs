@@ -16,6 +16,10 @@ pub fn type_name(t: &Type) -> String {
         Type::String => "String".into(),
         Type::Bool => "Bool".into(),
         Type::Var(tv) => format!("t{}", tv.0),
+        Type::Tuple(items) => {
+            let inner: Vec<String> = items.iter().map(type_name).collect();
+            format!("({})", inner.join(", "))
+        }
         Type::Fun(params, ret) => {
             let ps: Vec<String> = params.iter().map(type_name).collect();
             format!("({}) -> {}", ps.join(", "), type_name(ret))
@@ -34,6 +38,7 @@ impl Subst {
     fn apply(&self, t: &Type) -> Type {
         match t {
             Type::Var(tv) => self.0.get(tv).cloned().unwrap_or(Type::Var(tv.clone())),
+            Type::Tuple(items) => Type::Tuple(items.iter().map(|i| self.apply(i)).collect()),
             Type::Fun(ps, r) => Type::Fun(ps.iter().map(|p| self.apply(p)).collect(), Box::new(self.apply(r))),
             other => other.clone(),
         }
@@ -56,6 +61,11 @@ fn free_type_vars(t: &Type, acc: &mut HashSet<TypeVarId>) {
     match t {
         Type::Var(tv) => {
             acc.insert(tv.clone());
+        }
+        Type::Tuple(items) => {
+            for it in items {
+                free_type_vars(it, acc);
+            }
         }
         Type::Fun(ps, r) => {
             for p in ps {
@@ -225,6 +235,16 @@ fn infer_expr(
         ExprKind::Number(_) => Ok((Type::Number, Subst::new())),
         ExprKind::Bool(_) => Ok((Type::Bool, Subst::new())),
         ExprKind::Str(_) => Ok((Type::String, Subst::new())),
+        ExprKind::Tuple(items) => {
+            let mut s = Subst::new();
+            let mut tys = Vec::new();
+            for it in items {
+                let (t, st) = infer_expr(it, &apply_env(env, &s), state, source)?;
+                s = s.compose(&st);
+                tys.push(s.apply(&t));
+            }
+            Ok((Type::Tuple(tys), s))
+        }
         ExprKind::Var { name } => {
             if let Some(scheme) = env.schemes.get(name) {
                 Ok((instantiate(scheme, state), Subst::new()))
@@ -469,10 +489,9 @@ fn infer_match(
     for arm in arms {
         let env_arm = apply_env(env, &s);
         let scrut = s.apply(&scrut_ty);
-        if let Some(pat_ty) = pattern_expected_type(&arm.pat) {
-            let su = unify(&scrut, &pat_ty, span, source)?;
-            s = s.compose(&su);
-        }
+        let pat_ty = pattern_type(&arm.pat, state);
+        let su = unify(&scrut, &pat_ty, span, source)?;
+        s = s.compose(&su);
         let (arm_ty, sa) = infer_expr(&arm.expr, &env_arm, state, source)?;
         s = s.compose(&sa);
         let arm_ty = s.apply(&arm_ty);
@@ -493,12 +512,16 @@ fn infer_match(
         })
 }
 
-fn pattern_expected_type(pat: &Pattern) -> Option<Type> {
+fn pattern_type(pat: &Pattern, state: &mut InferState) -> Type {
     match pat {
-        Pattern::Wildcard => None,
-        Pattern::Bool(_) => Some(Type::Bool),
-        Pattern::Number(_) => Some(Type::Number),
-        Pattern::Str(_) => Some(Type::String),
+        Pattern::Wildcard => state.fresh_var(),
+        Pattern::Bool(_) => Type::Bool,
+        Pattern::Number(_) => Type::Number,
+        Pattern::Str(_) => Type::String,
+        Pattern::Tuple(items) => {
+            let elems = items.iter().map(|p| pattern_type(p, state)).collect();
+            Type::Tuple(elems)
+        }
     }
 }
 
@@ -527,6 +550,21 @@ fn unify(a: &Type, b: &Type, span: &Range<usize>, source: &str) -> Result<Subst,
             }
             let su = unify(&subst.apply(ra), &subst.apply(rb), span, source)?;
             Ok(subst.compose(&su))
+        }
+        (Type::Tuple(ae), Type::Tuple(be)) => {
+            if ae.len() != be.len() {
+                return Err(ParseError {
+                    message: "arity mismatch in tuple type".into(),
+                    span: span.clone(),
+                    source: source.to_string(),
+                });
+            }
+            let mut subst = Subst::new();
+            for (ta, tb) in ae.iter().zip(be.iter()) {
+                let su = unify(&subst.apply(ta), &subst.apply(tb), span, source)?;
+                subst = subst.compose(&su);
+            }
+            Ok(subst)
         }
         (Type::Var(v), t) => bind(v, t, span, source),
         (t, Type::Var(v)) => bind(v, t, span, source),
@@ -562,6 +600,7 @@ fn bind(var: &TypeVarId, t: &Type, span: &Range<usize>, source: &str) -> Result<
 fn occurs(var: &TypeVarId, t: &Type) -> bool {
     match t {
         Type::Var(v) => v == var,
+        Type::Tuple(items) => items.iter().any(|p| occurs(var, p)),
         Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
         _ => false,
     }

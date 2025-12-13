@@ -7,6 +7,7 @@ pub enum Type {
     Bool,
     Var(TypeVarId),
     Fun(Vec<Type>, Box<Type>),
+    Tuple(Vec<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -40,6 +41,7 @@ pub enum ExprKind {
     Bool(bool),
     Var { name: String },
     Str(String),
+    Tuple(Vec<Expr>),
     Block(Vec<Stmt>),
     Match {
         expr: Box<Expr>,
@@ -67,6 +69,7 @@ pub enum Pattern {
     Bool(bool),
     Number(f64),
     Str(String),
+    Tuple(Vec<Pattern>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
