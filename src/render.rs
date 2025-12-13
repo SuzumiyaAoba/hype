@@ -163,7 +163,11 @@ fn render_block(stmts: &[Stmt]) -> String {
                 let js = render_js(expr, 0);
                 parts.push(format!("{js};"));
             }
-            Stmt::Fn { .. } => {}
+            Stmt::Fn { name, params, body, .. } => {
+                let js_body = render_js(body, 0);
+                let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
+                parts.push(format!("function {name}({}) {{ return {js_body}; }}", param_list.join(", ")));
+            }
         }
     }
     let last = render_js(last_expr, 0);
