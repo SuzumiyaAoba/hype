@@ -1379,4 +1379,24 @@ mod tests {
         let out = js("fn inc(a: Number) = a + 1; inc(2)");
         assert_eq!(out, "function inc(a) { return a + 1; }\ninc(2)");
     }
+
+    #[test]
+    fn debug_info_collects_steps_and_annotations() {
+        let mut dbg = DebugInfo::default();
+        let js = transpile_with_debug("let x = 1 + 2; x", Some(&mut dbg)).unwrap();
+        assert_eq!(js, "let x = 1 + 2;\nx");
+        assert!(dbg
+            .steps
+            .iter()
+            .any(|s| s.contains("let x inferred as Number")));
+        let annotated = dbg.annotated_source.expect("annotated source");
+        assert!(annotated.contains("let x: Number = 1 + 2;"));
+    }
+
+    #[test]
+    fn debug_opt_out_has_no_steps() {
+        let dbg = DebugInfo::default();
+        let _ = transpile_with_debug("let y: Number = 1; y", None).unwrap();
+        assert!(dbg.steps.is_empty());
+    }
 }
