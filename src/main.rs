@@ -10,10 +10,26 @@ struct Args {
     /// REPL を起動
     #[arg(long)]
     repl: bool,
+    /// 推論デバッグの出力先（\"-\"=stdout, \"stderr\"=標準エラー, それ以外はファイルパス）
+    #[arg(long)]
+    infer_debug_log: Option<String>,
+    /// 推論注釈付きソースの出力先（\"-\"=stdout, \"stderr\"=標準エラー, それ以外はファイルパス）
+    #[arg(long)]
+    infer_annotated_out: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
+
+    unsafe {
+        if let Some(path) = &args.infer_debug_log {
+            std::env::set_var("HYPE_INFER_LOG", path);
+        }
+        if let Some(path) = &args.infer_annotated_out {
+            std::env::set_var("HYPE_INFER_ANNOTATED_OUT", path);
+        }
+    }
+
     if args.repl || args.expr.is_none() {
         repl();
         return;
