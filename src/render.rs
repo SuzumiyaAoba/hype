@@ -69,6 +69,10 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
             let parts: Vec<String> = items.iter().map(|e| render_js(e, 0)).collect();
             format!("[{}]", parts.join(", "))
         }
+        ExprKind::List(items) => {
+            let parts: Vec<String> = items.iter().map(|e| render_js(e, 0)).collect();
+            format!("[{}]", parts.join(", "))
+        }
         ExprKind::Var { name } => name.clone(),
         ExprKind::Call { callee, args, .. } => {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
@@ -150,10 +154,11 @@ fn render_number_literal(n: f64) -> String {
 fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
     match pat {
         crate::ast::Pattern::Wildcard => "true".to_string(),
+        crate::ast::Pattern::Bind(_) => "true".to_string(),
         crate::ast::Pattern::Bool(b) => format!("{var} === {b}"),
         crate::ast::Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
         crate::ast::Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
-        crate::ast::Pattern::Tuple(items) => {
+        crate::ast::Pattern::Tuple(items) | crate::ast::Pattern::List(items) => {
             let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length === {}", items.len())];
             for (i, pat) in items.iter().enumerate() {
                 let inner_var = format!("{var}[{i}]");
@@ -161,6 +166,32 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
             }
             conds.join(" && ")
         }
+        crate::ast::Pattern::Cons(head, tail) => {
+            let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length >= 1")];
+            conds.push(render_pattern_condition(&format!("{var}[0]"), head));
+            conds.push(render_pattern_condition(&format!("{var}.slice(1)"), tail));
+            conds.join(" && ")
+        }
+    }
+}
+
+fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String)> {
+    match pat {
+        crate::ast::Pattern::Bind(name) => vec![(name.clone(), var.to_string())],
+        crate::ast::Pattern::Tuple(items) | crate::ast::Pattern::List(items) => {
+            let mut out = Vec::new();
+            for (i, p) in items.iter().enumerate() {
+                out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
+            }
+            out
+        }
+        crate::ast::Pattern::Cons(head, tail) => {
+            let mut out = Vec::new();
+            out.extend(pattern_bindings(&format!("{var}[0]"), head));
+            out.extend(pattern_bindings(&format!("{var}.slice(1)"), tail));
+            out
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -198,11 +229,14 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
     parts.push(format!("const __match = {scrutinee};"));
     for (i, arm) in arms.iter().enumerate() {
         let cond = render_pattern_condition("__match", &arm.pat);
+        let bindings = pattern_bindings("__match", &arm.pat);
+        let decls: Vec<String> = bindings.iter().map(|(n, e)| format!("const {n} = {e};")).collect();
+        let binds_js = if decls.is_empty() { String::new() } else { format!("{} ", decls.join(" ")) };
         let body = render_js(&arm.expr, 0);
         if i == 0 {
-            parts.push(format!("if ({cond}) {{ return {body}; }}"));
+            parts.push(format!("if ({cond}) {{ {binds_js}return {body}; }}"));
         } else {
-            parts.push(format!("else if ({cond}) {{ return {body}; }}"));
+            parts.push(format!("else if ({cond}) {{ {binds_js}return {body}; }}"));
         }
     }
     parts.push("return undefined;".to_string());

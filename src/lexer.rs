@@ -39,6 +39,10 @@ pub(crate) enum Tok {
     LParen,
     #[token(")")]
     RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token("=>")]
     Arrow,
     #[token("->")]
@@ -49,6 +53,8 @@ pub(crate) enum Tok {
     Comma,
     #[token("=")]
     Eq,
+    #[token("::")]
+    Cons,
     #[token(";")]
     Semi,
     #[token("_", priority = 2)]

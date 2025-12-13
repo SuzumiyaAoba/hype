@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 65
+assertion_line: 70
 expression: out
 ---
 polymorphic_fn
@@ -85,3 +85,13 @@ tuple_pattern_match
 match((1, true)){case (1, true) => 0; case _ => 1}
 ---
 (() => { const __match = [1, true]; if (Array.isArray(__match) && __match.length === 2 && __match[0] === 1 && __match[1] === true) { return 0; } else if (true) { return 1; } return undefined; })()
+===
+list_literal
+[1, 2, 3]
+---
+[1, 2, 3]
+===
+list_cons_match
+match([1, 2]){case h :: t => h; case _ => 0}
+---
+(() => { const __match = [1, 2]; if (Array.isArray(__match) && __match.length >= 1 && true && true) { const h = __match[0]; const t = __match.slice(1); return h; } else if (true) { return 0; } return undefined; })()

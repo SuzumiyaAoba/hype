@@ -47,6 +47,11 @@ fn transformations() {
             "tuple_pattern_match",
             "match((1, true)){case (1, true) => 0; case _ => 1}",
         ),
+        ("list_literal", "[1, 2, 3]"),
+        (
+            "list_cons_match",
+            "match([1, 2]){case h :: t => h; case _ => 0}",
+        ),
     ];
 
     let mut out = String::new();
