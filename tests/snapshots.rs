@@ -6,3 +6,6 @@ mod bool_ops;
 
 #[path = "snapshots/match_blocks.rs"]
 mod match_blocks;
+
+#[path = "snapshots/infer_debug.rs"]
+mod infer_debug;
