@@ -13,11 +13,18 @@ pub enum BinOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
+    Var(String),
     Binary {
         op: BinOp,
         left: Box<Expr>,
         right: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Let { name: String, expr: Expr },
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +58,14 @@ enum Tok {
     LParen,
     #[token(")")]
     RParen,
+    #[token("=")]
+    Eq,
+    #[token(";")]
+    Semi,
+    #[token("let")]
+    Let,
+    #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
+    Ident(String),
     #[regex(r"[ \t\r\n]+", logos::skip)]
     Whitespace,
     Eof,
@@ -65,18 +80,16 @@ struct Token {
 pub fn transpile(input: &str) -> Result<String, ParseError> {
     let tokens = lex(input)?;
     let mut parser = Parser { tokens, pos: 0 };
-    match parser.parse_expression(0) {
-        Ok(expr) => {
-            match parser.expect(Tok::Eof) {
-                Ok(_) => Ok(render_js(&expr, 0)),
-                Err(mut e) => {
-                    if e.source.is_empty() {
-                        e.source = input.to_string();
-                    }
-                    Err(e)
+    match parser.parse_program() {
+        Ok(stmts) => match parser.expect(Tok::Eof) {
+            Ok(_) => Ok(render_program(&stmts)),
+            Err(mut e) => {
+                if e.source.is_empty() {
+                    e.source = input.to_string();
                 }
+                Err(e)
             }
-        }
+        },
         Err(mut e) => {
             if e.source.is_empty() {
                 e.source = input.to_string();
@@ -142,6 +155,48 @@ impl Parser {
         }
     }
 
+    fn parse_program(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        let mut stmts = Vec::new();
+        while !matches!(self.peek().kind, Tok::Eof) {
+            if matches!(self.peek().kind, Tok::Let) {
+                stmts.push(self.parse_let()?);
+                self.optional_semi();
+            } else {
+                let expr = self.parse_expression(0)?;
+                stmts.push(Stmt::Expr(expr));
+                self.optional_semi();
+            }
+        }
+        Ok(stmts)
+    }
+
+    fn optional_semi(&mut self) {
+        if matches!(self.peek().kind, Tok::Semi) {
+            self.advance();
+        }
+    }
+
+    fn parse_let(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::Let)?;
+        let name = match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected identifier".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        self.expect(Tok::Eq)?;
+        let expr = self.parse_expression(0)?;
+        Ok(Stmt::Let { name, expr })
+    }
+
     fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
         let mut left = self.parse_primary()?;
 
@@ -168,6 +223,11 @@ impl Parser {
                 let value = *n;
                 self.advance();
                 Ok(Expr::Number(value))
+            }
+            Tok::Ident(name) => {
+                let n = name.clone();
+                self.advance();
+                Ok(Expr::Var(n))
             }
             Tok::Minus => {
                 // unary minus
@@ -213,6 +273,7 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
                 format!("{}", n)
             }
         }
+        Expr::Var(name) => name.clone(),
         Expr::Binary { op, left, right } => {
             let prec = match op {
                 BinOp::Add | BinOp::Sub => 1,
@@ -333,6 +394,28 @@ fn line_info(src: &str, offset: usize) -> (usize, usize, usize, usize) {
     (line, col, last_line_start, line_end)
 }
 
+fn render_program(stmts: &[Stmt]) -> String {
+    let mut lines = Vec::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        match stmt {
+            Stmt::Let { name, expr } => {
+                let js = render_js(expr, 0);
+                lines.push(format!("let {name} = {js};"));
+            }
+            Stmt::Expr(expr) => {
+                let js = render_js(expr, 0);
+                // 最終式だけセミコロンを付けない
+                if i == stmts.len() - 1 {
+                    lines.push(js);
+                } else {
+                    lines.push(format!("{js};"));
+                }
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +446,11 @@ mod tests {
     fn respects_precedence_chain() {
         assert_eq!(js("1-2-3"), "1 - 2 - 3");
         assert_eq!(js("1-2*3-4"), "1 - 2 * 3 - 4");
+    }
+
+    #[test]
+    fn lets_and_vars() {
+        let out = js("let x = 1+2; let y = x*3; y - x");
+        assert_eq!(out, "let x = 1 + 2;\nlet y = x * 3;\ny - x");
     }
 }
