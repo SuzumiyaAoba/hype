@@ -26,6 +26,14 @@ fn transformations() {
             "lambda_closure",
             "fn wrap(x) = { let add = \\y -> x + y; add }; wrap(1)",
         ),
+        (
+            "mutual_in_block",
+            "{ fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)}; fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)}; is_even(6) }",
+        ),
+        (
+            "forward_call_to_mutual",
+            "start(); fn start() = is_even(3); fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)}; fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)}",
+        ),
     ];
 
     let mut out = String::new();
