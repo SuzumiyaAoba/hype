@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/match_blocks.rs
-assertion_line: 23
+assertion_line: 24
 expression: out
 ---
 { let x: Number = 1; x + 2 }
@@ -14,3 +14,7 @@ match(true){case true => 1; case _ => 0}
 match(false){case true => { let x: Number = 2; x }; case _ => { let y: Number = 3; y + 1 }}
 ---
 (() => { const __match = false; if (__match === true) { return (() => { let x = 2; return x; })(); } else if (true) { return (() => { let y = 3; return y + 1; })(); } return undefined; })()
+===
+match(1 < 2 && true){case true => 1; case _ => 0}
+---
+(() => { const __match = 1 < 2 && true; if (__match === true) { return 1; } else if (true) { return 0; } return undefined; })()

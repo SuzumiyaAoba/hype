@@ -6,6 +6,7 @@ fn match_and_blocks() {
         "{ let x: Number = 1; x + 2 }",
         "match(true){case true => 1; case _ => 0}",
         "match(false){case true => { let x: Number = 2; x }; case _ => { let y: Number = 3; y + 1 }}",
+        "match(1 < 2 && true){case true => 1; case _ => 0}",
     ];
 
     let mut out = String::new();

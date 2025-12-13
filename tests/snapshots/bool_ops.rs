@@ -7,6 +7,8 @@ fn bool_and_comparison() {
         "false",
         "true && false",
         "true || false && true",
+        "false && true || true",
+        "true && true || false",
         "1 < 2",
         "1 <= 2 == true",
         "1 + 2 == 3",
