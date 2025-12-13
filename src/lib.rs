@@ -961,9 +961,9 @@ struct TypeEnv {
     fns: HashMap<String, FnSig>,
 }
 
-fn log_debug(debug: Option<&mut DebugInfo>, msg: impl Into<String>) {
+fn log_debug<F: FnOnce() -> String>(debug: Option<&mut DebugInfo>, f: F) {
     if let Some(d) = debug {
-        d.steps.push(msg.into());
+        d.steps.push(f());
     }
 }
 
@@ -992,15 +992,17 @@ fn typecheck(
             );
             log_debug(
                 debug.as_deref_mut(),
-                format!(
-                    "fn signature collected: {name}({}) -> {:?}",
-                    params
-                        .iter()
-                        .map(|(p, t)| format!("{p}: {:?}", t))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    ret.as_ref().unwrap_or(&Type::Unknown)
-                ),
+                || {
+                    format!(
+                        "fn signature collected: {name}({}) -> {:?}",
+                        params
+                            .iter()
+                            .map(|(p, t)| format!("{p}: {:?}", t))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        ret.as_ref().unwrap_or(&Type::Unknown)
+                    )
+                },
             );
         }
     }
@@ -1015,12 +1017,12 @@ fn typecheck(
                     vars.insert(name.clone(), t.clone());
                     log_debug(
                         debug.as_deref_mut(),
-                        format!("let {name}: {:?} = (checked as {:?})", t, expr_ty),
+                        || format!("let {name}: {:?} = (checked as {:?})", t, expr_ty),
                     );
                 } else {
                     log_debug(
                         debug.as_deref_mut(),
-                        format!("let {name} inferred as {:?}", expr_ty),
+                        || format!("let {name} inferred as {:?}", expr_ty),
                     );
                     vars.insert(name.clone(), expr_ty);
                 }
@@ -1037,13 +1039,13 @@ fn typecheck(
                     sig.ret = r.clone();
                     log_debug(
                         debug.as_deref_mut(),
-                        format!("fn {name} return checked as {:?} (body {:?})", r, body_ty),
+                        || format!("fn {name} return checked as {:?} (body {:?})", r, body_ty),
                     );
                 } else {
                     sig.ret = body_ty;
                     log_debug(
                         debug.as_deref_mut(),
-                        format!("fn {name} return inferred as {:?}", sig.ret),
+                        || format!("fn {name} return inferred as {:?}", sig.ret),
                     );
                 }
             }
