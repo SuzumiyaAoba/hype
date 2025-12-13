@@ -41,6 +41,8 @@ pub(crate) enum Tok {
     RParen,
     #[token("=>")]
     Arrow,
+    #[token("->")]
+    ThinArrow,
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
     Str(String),
     #[token(",")]
@@ -51,6 +53,8 @@ pub(crate) enum Tok {
     Semi,
     #[token("_", priority = 2)]
     Underscore,
+    #[token("\\")]
+    Backslash,
     #[token("match")]
     Match,
     #[token("case")]

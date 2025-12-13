@@ -41,13 +41,13 @@ is_even(4);
 is_odd(5)
 ===
 lambda_let
-let id = fn(x) = x; id(3)
+let id = \x -> x; id(3)
 ---
 let id = (function(x) { return x; });
 id(3)
 ===
 lambda_closure
-fn wrap(x) = { let add = fn(y) = x + y; add }; wrap(1)
+fn wrap(x) = { let add = \y -> x + y; add }; wrap(1)
 ---
 function wrap(x) { return (() => { let add = (function(y) { return x + y; }); return add; })(); }
 wrap(1)
