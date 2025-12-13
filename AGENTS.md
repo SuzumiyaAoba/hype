@@ -1,6 +1,8 @@
 # メンテナンスメモ
 
 - 管理方針: GitHub Project「Kanban for AI」（Userプロジェクト、番号 #4、URL: https://github.com/users/SuzumiyaAoba/projects/4、Project ID: `PVT_kwHOAmaFM84BKgQt`）を使って言語の最低限の機能開発をトラッキングします（Backlog→In Progress→Done）。`gh` で操作する際は `--owner SuzumiyaAoba --number 4` を指定します。
+- チケット作成は Issue で行う（Draft は使わない）。`gh issue create ...` で発行し、`gh project item-add 4 --owner SuzumiyaAoba --url <issue>` でKanbanに登録する。
+- 今後、ユーザ指示で覚えておくべき事項があれば本ファイルに追記して記録する。
 
 - Backlog（最低限の言語機能）
   - Boolリテラル・比較/論理演算子のパース＋型チェック
