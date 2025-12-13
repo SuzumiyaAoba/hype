@@ -90,6 +90,12 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+#[derive(Debug, Default, Clone)]
+pub struct DebugInfo {
+    pub steps: Vec<String>,
+    pub annotated_source: Option<String>,
+}
+
 #[derive(Logos, Debug, Clone, PartialEq)]
 enum Tok {
     #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse::<f64>().unwrap())]
@@ -166,11 +172,23 @@ struct Token {
 }
 
 pub fn transpile(input: &str) -> Result<String, ParseError> {
+    let mut debug = debug_requested_from_env();
+    let result = transpile_with_debug(input, debug.as_mut().map(|d| d as &mut DebugInfo));
+    if let (Ok(_), Some(info)) = (&result, debug.as_ref()) {
+        dump_debug_outputs(info);
+    }
+    result
+}
+
+pub fn transpile_with_debug(input: &str, mut debug: Option<&mut DebugInfo>) -> Result<String, ParseError> {
     let tokens = lex(input)?;
     let mut parser = Parser { tokens, pos: 0 };
     match parser.parse_program() {
         Ok(stmts) => {
-            typecheck(&stmts, input)?;
+            let env = typecheck(&stmts, input, debug.as_deref_mut())?;
+            if let Some(d) = debug.as_deref_mut() {
+                d.annotated_source = Some(render_annotated_program(&stmts, &env));
+            }
             match parser.expect(Tok::Eof) {
                 Ok(_) => Ok(render_program(&stmts)),
                 Err(mut e) => {
@@ -186,6 +204,50 @@ pub fn transpile(input: &str) -> Result<String, ParseError> {
                 e.source = input.to_string();
             }
             Err(e)
+        }
+    }
+}
+
+fn debug_requested_from_env() -> Option<DebugInfo> {
+    let has_log = std::env::var("HYPE_INFER_LOG")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    let has_annot = std::env::var("HYPE_INFER_ANNOTATED_OUT")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if has_log || has_annot {
+        Some(DebugInfo::default())
+    } else {
+        None
+    }
+}
+
+fn dump_debug_outputs(info: &DebugInfo) {
+    if let Ok(path) = std::env::var("HYPE_INFER_LOG") {
+        if !path.is_empty() {
+            let mut buf = String::new();
+            if let Some(annot) = &info.annotated_source {
+                buf.push_str("== annotated ==\n");
+                buf.push_str(annot);
+                buf.push_str("\n\n");
+            }
+            buf.push_str("== steps ==\n");
+            for step in &info.steps {
+                buf.push_str(step);
+                buf.push('\n');
+            }
+            if let Err(e) = std::fs::write(&path, buf) {
+                eprintln!("failed to write debug log to {path}: {e}");
+            }
+        }
+    }
+    if let Ok(path) = std::env::var("HYPE_INFER_ANNOTATED_OUT") {
+        if !path.is_empty() {
+            if let Some(annot) = &info.annotated_source {
+                if let Err(e) = std::fs::write(&path, annot) {
+                    eprintln!("failed to write annotated output to {path}: {e}");
+                }
+            }
         }
     }
 }
@@ -828,6 +890,52 @@ fn render_program(stmts: &[Stmt]) -> String {
     lines.join("\n")
 }
 
+fn type_name(t: &Type) -> &'static str {
+    match t {
+        Type::Number => "Number",
+        Type::String => "String",
+        Type::Bool => "Bool",
+        Type::Unknown => "Unknown",
+    }
+}
+
+fn render_annotated_program(stmts: &[Stmt], env: &TypeEnv) -> String {
+    let mut lines = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, ty, expr } => {
+                let t = ty
+                    .as_ref()
+                    .or_else(|| env.vars.get(name))
+                    .unwrap_or(&Type::Unknown);
+                let js = render_js(expr, 0);
+                lines.push(format!("let {name}: {} = {js};", type_name(t)));
+            }
+            Stmt::Fn { name, params, ret, body } => {
+                let ret_ty = ret
+                    .as_ref()
+                    .or_else(|| env.fns.get(name).map(|f| &f.ret))
+                    .unwrap_or(&Type::Unknown);
+                let params_str = params
+                    .iter()
+                    .map(|(p, t)| format!("{p}: {}", type_name(t)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let body_js = render_js(body, 0);
+                lines.push(format!(
+                    "fn {name}({params_str}): {} = {body_js};",
+                    type_name(ret_ty)
+                ));
+            }
+            Stmt::Expr(expr) => {
+                let js = render_js(expr, 0);
+                lines.push(js);
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 fn escape_js_str(s: &str) -> String {
     s.chars()
         .flat_map(|c| match c {
@@ -847,7 +955,23 @@ struct FnSig {
     ret: Type,
 }
 
-fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
+#[derive(Debug, Clone, Default)]
+struct TypeEnv {
+    vars: HashMap<String, Type>,
+    fns: HashMap<String, FnSig>,
+}
+
+fn log_debug(debug: Option<&mut DebugInfo>, msg: impl Into<String>) {
+    if let Some(d) = debug {
+        d.steps.push(msg.into());
+    }
+}
+
+fn typecheck(
+    stmts: &[Stmt],
+    source: &str,
+    mut debug: Option<&mut DebugInfo>,
+) -> Result<TypeEnv, ParseError> {
     let mut fns: HashMap<String, FnSig> = HashMap::new();
     for stmt in stmts {
         if let Stmt::Fn { name, params, ret, .. } = stmt {
@@ -866,6 +990,18 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
                     ret: ret.clone().unwrap_or(Type::Unknown),
                 },
             );
+            log_debug(
+                debug.as_deref_mut(),
+                format!(
+                    "fn signature collected: {name}({}) -> {:?}",
+                    params
+                        .iter()
+                        .map(|(p, t)| format!("{p}: {:?}", t))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    ret.as_ref().unwrap_or(&Type::Unknown)
+                ),
+            );
         }
     }
 
@@ -873,11 +1009,19 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, ty, expr } => {
-                let expr_ty = type_of_expr(expr, &vars, &fns, source)?;
+                let expr_ty = type_of_expr(expr, &vars, &fns, source, debug.as_deref_mut())?;
                 if let Some(t) = ty {
                     unify_or_error(t, &expr_ty, source, "type mismatch for let binding")?;
                     vars.insert(name.clone(), t.clone());
+                    log_debug(
+                        debug.as_deref_mut(),
+                        format!("let {name}: {:?} = (checked as {:?})", t, expr_ty),
+                    );
                 } else {
+                    log_debug(
+                        debug.as_deref_mut(),
+                        format!("let {name} inferred as {:?}", expr_ty),
+                    );
                     vars.insert(name.clone(), expr_ty);
                 }
             }
@@ -886,21 +1030,29 @@ fn typecheck(stmts: &[Stmt], source: &str) -> Result<(), ParseError> {
                 for (pname, pty) in params {
                     local.insert(pname.clone(), pty.clone());
                 }
-                let body_ty = type_of_expr(body, &local, &fns, source)?;
+                let body_ty = type_of_expr(body, &local, &fns, source, debug.as_deref_mut())?;
                 let sig = fns.get_mut(name).expect("fn sig exists");
                 if let Some(r) = ret {
                     unify_or_error(r, &body_ty, source, "type mismatch in function body")?;
                     sig.ret = r.clone();
+                    log_debug(
+                        debug.as_deref_mut(),
+                        format!("fn {name} return checked as {:?} (body {:?})", r, body_ty),
+                    );
                 } else {
                     sig.ret = body_ty;
+                    log_debug(
+                        debug.as_deref_mut(),
+                        format!("fn {name} return inferred as {:?}", sig.ret),
+                    );
                 }
             }
             Stmt::Expr(expr) => {
-                let _ = type_of_expr(expr, &vars, &fns, source)?;
+                let _ = type_of_expr(expr, &vars, &fns, source, debug.as_deref_mut())?;
             }
         }
     }
-    Ok(())
+    Ok(TypeEnv { vars, fns })
 }
 
 fn unify_or_error(expected: &Type, found: &Type, source: &str, msg: &str) -> Result<(), ParseError> {
@@ -930,21 +1082,22 @@ fn type_of_expr(
     vars: &HashMap<String, Type>,
     fns: &HashMap<String, FnSig>,
     source: &str,
+    mut debug: Option<&mut DebugInfo>,
 ) -> Result<Type, ParseError> {
     match expr {
         Expr::Number(_) => Ok(Type::Number),
         Expr::Bool(_) => Ok(Type::Bool),
         Expr::Str(_) => Ok(Type::String),
-        Expr::Block(stmts) => type_of_block(stmts, vars, fns, source),
-        Expr::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source),
+        Expr::Block(stmts) => type_of_block(stmts, vars, fns, source, debug),
+        Expr::Match { expr, arms } => type_of_match(expr, arms, vars, fns, source, debug),
         Expr::Var(name) => vars.get(name).cloned().ok_or_else(|| ParseError {
             message: format!("unbound variable '{}'", name),
             span: 0..0,
             source: source.to_string(),
         }),
         Expr::Binary { op, left, right } => {
-            let lt = type_of_expr(left, vars, fns, source)?;
-            let rt = type_of_expr(right, vars, fns, source)?;
+            let lt = type_of_expr(left, vars, fns, source, debug.as_deref_mut())?;
+            let rt = type_of_expr(right, vars, fns, source, debug.as_deref_mut())?;
             match op {
                 BinOp::Add => {
                     if let Some(t) = unify(&lt, &rt) {
@@ -1011,7 +1164,7 @@ fn type_of_expr(
                 });
             }
             for (arg, expected) in args.iter().zip(sig.params.iter()) {
-                let aty = type_of_expr(arg, vars, fns, source)?;
+                let aty = type_of_expr(arg, vars, fns, source, debug.as_deref_mut())?;
                 if &aty != expected {
                     return Err(ParseError {
                         message: format!(
@@ -1033,6 +1186,7 @@ fn type_of_block(
     vars: &HashMap<String, Type>,
     fns: &HashMap<String, FnSig>,
     source: &str,
+    mut debug: Option<&mut DebugInfo>,
 ) -> Result<Type, ParseError> {
     if !matches!(stmts.last(), Some(Stmt::Expr(_))) {
         return Err(ParseError {
@@ -1046,7 +1200,7 @@ fn type_of_block(
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, ty, expr } => {
-                let expr_ty = type_of_expr(expr, &local, fns, source)?;
+                let expr_ty = type_of_expr(expr, &local, fns, source, debug.as_deref_mut())?;
                 if let Some(t) = ty {
                     unify_or_error(t, &expr_ty, source, "type mismatch in block let")?;
                     local.insert(name.clone(), t.clone());
@@ -1055,7 +1209,7 @@ fn type_of_block(
                 }
             }
             Stmt::Expr(expr) => {
-                let ty = type_of_expr(expr, &local, fns, source)?;
+                let ty = type_of_expr(expr, &local, fns, source, debug.as_deref_mut())?;
                 last_ty = Some(ty);
             }
             Stmt::Fn { .. } => {
@@ -1103,6 +1257,7 @@ fn type_of_match(
     vars: &HashMap<String, Type>,
     fns: &HashMap<String, FnSig>,
     source: &str,
+    mut debug: Option<&mut DebugInfo>,
 ) -> Result<Type, ParseError> {
     if arms.is_empty() {
         return Err(ParseError {
@@ -1112,11 +1267,11 @@ fn type_of_match(
         });
     }
 
-    let scrutinee_ty = type_of_expr(expr, vars, fns, source)?;
+    let scrutinee_ty = type_of_expr(expr, vars, fns, source, debug.as_deref_mut())?;
     let mut result_ty: Option<Type> = None;
     for arm in arms {
         ensure_pattern_matches(&arm.pat, &scrutinee_ty, source)?;
-        let ty = type_of_expr(&arm.expr, vars, fns, source)?;
+        let ty = type_of_expr(&arm.expr, vars, fns, source, debug.as_deref_mut())?;
         if let Some(prev) = &result_ty {
             if let Some(u) = unify(prev, &ty) {
                 result_ty = Some(u);
