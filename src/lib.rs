@@ -14,6 +14,7 @@ pub enum BinOp {
 pub enum Expr {
     Number(f64),
     Var(String),
+    Str(String),
     Binary {
         op: BinOp,
         left: Box<Expr>,
@@ -58,6 +59,10 @@ enum Tok {
     LParen,
     #[token(")")]
     RParen,
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
+    Str(String),
+    #[token(",")]
+    Comma,
     #[token("=")]
     Eq,
     #[token(";")]
@@ -224,6 +229,11 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Number(value))
             }
+            Tok::Str(raw) => {
+                let inner = raw.trim_matches('"').to_string();
+                self.advance();
+                Ok(Expr::Str(inner))
+            }
             Tok::Ident(name) => {
                 let n = name.clone();
                 self.advance();
@@ -273,6 +283,7 @@ fn render_js(expr: &Expr, parent_prec: u8) -> String {
                 format!("{}", n)
             }
         }
+        Expr::Str(s) => format!("\"{}\"", escape_js_str(s)),
         Expr::Var(name) => name.clone(),
         Expr::Binary { op, left, right } => {
             let prec = match op {
@@ -414,6 +425,19 @@ fn render_program(stmts: &[Stmt]) -> String {
         }
     }
     lines.join("\n")
+}
+
+fn escape_js_str(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect()
 }
 
 #[cfg(test)]
