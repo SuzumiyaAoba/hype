@@ -124,6 +124,25 @@ pub(crate) fn typecheck(
     let mut env = TypeEnv::default();
     let mut state = InferState::default();
 
+    let mut fn_seeds: HashMap<String, (Vec<Type>, Type)> = HashMap::new();
+    for stmt in stmts {
+        if let Stmt::Fn { name, params, ret, .. } = stmt {
+            let mut param_types = Vec::new();
+            for (_, pty) in params {
+                let pt = if let Some(t) = pty {
+                    t.clone()
+                } else {
+                    state.fresh_var()
+                };
+                param_types.push(pt);
+            }
+            let ret_ty = ret.clone().unwrap_or_else(|| state.fresh_var());
+            let fn_ty = Type::Fun(param_types.clone(), Box::new(ret_ty.clone()));
+            env.schemes.insert(name.clone(), Scheme { vars: vec![], ty: fn_ty });
+            fn_seeds.insert(name.clone(), (param_types, ret_ty));
+        }
+    }
+
     for stmt in stmts {
         match stmt {
             Stmt::Let { name, ty, expr } => {
@@ -142,30 +161,38 @@ pub(crate) fn typecheck(
                 }
             }
             Stmt::Fn { name, params, ret, body } => {
-                let mut local = env.clone();
-                let mut param_types = Vec::new();
-                for (pname, pty) in params {
-                    let pt = if let Some(t) = pty {
-                        t.clone()
-                    } else {
-                        state.fresh_var()
-                    };
-                    param_types.push(pt.clone());
-                    local.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt });
+                let (param_types, mut ret_ty) = fn_seeds
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let pts = params
+                            .iter()
+                            .map(|(_, pty)| pty.clone().unwrap_or_else(|| state.fresh_var()))
+                            .collect::<Vec<_>>();
+                        let r = ret.clone().unwrap_or_else(|| state.fresh_var());
+                        (pts, r)
+                    });
+                let mut env_body = env.clone();
+                for ((pname, _), pt) in params.iter().zip(param_types.iter()) {
+                    env_body.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt.clone() });
                 }
-                let (body_ty, s_body) = infer_expr(body, &local, &mut state, source)?;
+                let provisional = Type::Fun(param_types.clone(), Box::new(ret_ty.clone()));
+                env_body.schemes.insert(name.clone(), Scheme { vars: vec![], ty: provisional.clone() });
+
+                let (body_ty, s_body) = infer_expr(body, &env_body, &mut state, source)?;
                 let body_ty = s_body.apply(&body_ty);
-                let mut ret_ty = if let Some(r) = ret {
+                if let Some(r) = ret {
                     let ann = s_body.apply(r);
                     unify(&body_ty, &ann, &body.span, source)?;
-                    ann
+                    ret_ty = ann;
                 } else {
-                    body_ty
-                };
-                param_types = param_types.into_iter().map(|p| s_body.apply(&p)).collect();
-                ret_ty = s_body.apply(&ret_ty);
-                let fn_ty = Type::Fun(param_types, Box::new(ret_ty.clone()));
-                env.schemes.insert(name.clone(), generalize(&env, &fn_ty));
+                    ret_ty = body_ty;
+                }
+                let fn_ty = Type::Fun(
+                    param_types.into_iter().map(|p| s_body.apply(&p)).collect(),
+                    Box::new(ret_ty.clone()),
+                );
+                env.schemes.insert(name.clone(), generalize(&apply_env(&env, &s_body), &fn_ty));
                 crate::debug::log_debug(debug.as_deref_mut(), || format!("fn {name} inferred as {:?}", fn_ty));
             }
             Stmt::Expr(expr) => {
@@ -294,6 +321,26 @@ fn infer_block(
     }
     let mut s = Subst::new();
     let mut local_env = env.clone();
+
+    let mut fn_seeds: HashMap<String, (Vec<Type>, Type)> = HashMap::new();
+    for stmt in stmts {
+        if let Stmt::Fn { name, params, ret, .. } = stmt {
+            let mut param_types = Vec::new();
+            for (_, pty) in params {
+                let pt = if let Some(t) = pty {
+                    s.apply(t)
+                } else {
+                    state.fresh_var()
+                };
+                param_types.push(pt);
+            }
+            let ret_ty = ret.as_ref().map(|t| s.apply(t)).unwrap_or_else(|| state.fresh_var());
+            let fn_ty = Type::Fun(param_types.clone(), Box::new(ret_ty.clone()));
+            local_env.schemes.insert(name.clone(), Scheme { vars: vec![], ty: fn_ty });
+            fn_seeds.insert(name.clone(), (param_types, ret_ty));
+        }
+    }
+
     let mut last_ty = None;
     for stmt in stmts {
         match stmt {
@@ -315,23 +362,32 @@ fn infer_block(
             }
             Stmt::Fn { name, params, ret, body } => {
                 let mut env_fn = apply_env(&local_env, &s);
-                let mut param_types = Vec::new();
-                for (pname, pty) in params {
-                    let pt = if let Some(t) = pty {
-                        s.apply(t)
-                    } else {
-                        state.fresh_var()
-                    };
-                    param_types.push(pt.clone());
-                    env_fn.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt });
+                let (param_types, mut ret_ty) = fn_seeds
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let pts = params
+                            .iter()
+                            .map(|(_, pty)| pty.as_ref().map(|t| s.apply(t)).unwrap_or_else(|| state.fresh_var()))
+                            .collect::<Vec<_>>();
+                        let r = ret.as_ref().map(|t| s.apply(t)).unwrap_or_else(|| state.fresh_var());
+                        (pts, r)
+                    });
+                for ((pname, _), pt) in params.iter().zip(param_types.iter()) {
+                    env_fn.schemes.insert(pname.clone(), Scheme { vars: vec![], ty: pt.clone() });
                 }
+                let provisional = Type::Fun(param_types.clone(), Box::new(ret_ty.clone()));
+                env_fn.schemes.insert(name.clone(), Scheme { vars: vec![], ty: provisional });
+
                 let (body_ty, sb) = infer_expr(body, &env_fn, state, source)?;
                 s = s.compose(&sb);
-                let mut ret_ty = s.apply(&body_ty);
+                let body_ty = s.apply(&body_ty);
                 if let Some(r) = ret {
                     let ann = s.apply(r);
-                    unify(&ret_ty, &ann, &body.span, source)?;
+                    unify(&body_ty, &ann, &body.span, source)?;
                     ret_ty = ann;
+                } else {
+                    ret_ty = body_ty.clone();
                 }
                 let fn_ty = Type::Fun(
                     param_types.into_iter().map(|p| s.apply(&p)).collect(),
@@ -378,7 +434,10 @@ fn infer_match(
     for arm in arms {
         let env_arm = apply_env(env, &s);
         let scrut = s.apply(&scrut_ty);
-        ensure_pattern_matches(&arm.pat, &scrut, source, span)?;
+        if let Some(pat_ty) = pattern_expected_type(&arm.pat) {
+            let su = unify(&scrut, &pat_ty, span, source)?;
+            s = s.compose(&su);
+        }
         let (arm_ty, sa) = infer_expr(&arm.expr, &env_arm, state, source)?;
         s = s.compose(&sa);
         let arm_ty = s.apply(&arm_ty);
@@ -397,6 +456,15 @@ fn infer_match(
             span: span.clone(),
             source: source.to_string(),
         })
+}
+
+fn pattern_expected_type(pat: &Pattern) -> Option<Type> {
+    match pat {
+        Pattern::Wildcard => None,
+        Pattern::Bool(_) => Some(Type::Bool),
+        Pattern::Number(_) => Some(Type::Number),
+        Pattern::Str(_) => Some(Type::String),
+    }
 }
 
 fn apply_env(env: &TypeEnv, s: &Subst) -> TypeEnv {
@@ -461,28 +529,5 @@ fn occurs(var: &TypeVarId, t: &Type) -> bool {
         Type::Var(v) => v == var,
         Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
         _ => false,
-    }
-}
-
-fn ensure_pattern_matches(
-    pat: &Pattern,
-    ty: &Type,
-    source: &str,
-    span: &Range<usize>,
-) -> Result<(), ParseError> {
-    let ok = match pat {
-        Pattern::Wildcard => true,
-        Pattern::Bool(_) => matches!(ty, Type::Bool),
-        Pattern::Number(_) => matches!(ty, Type::Number),
-        Pattern::Str(_) => matches!(ty, Type::String),
-    };
-    if ok {
-        Ok(())
-    } else {
-        Err(ParseError {
-            message: format!("pattern does not match type {:?}", ty),
-            span: span.clone(),
-            source: source.to_string(),
-        })
     }
 }

@@ -10,5 +10,8 @@ mod match_blocks;
 #[path = "snapshots/infer_debug.rs"]
 mod infer_debug;
 
+#[path = "snapshots/hm_inference.rs"]
+mod hm_inference;
+
 #[path = "snapshots/error_output.rs"]
 mod error_output;

@@ -1,0 +1,41 @@
+---
+source: tests/snapshots/hm_inference.rs
+assertion_line: 39
+expression: out
+---
+polymorphic_fn
+fn id(a) = a; id(1); id(true)
+---
+function id(a) { return a; }
+id(1);
+id(true)
+===
+higher_order_apply
+fn apply(f, x) = f(x); fn inc(n) = n + 1; apply(inc, 41)
+---
+function apply(f, x) { return f(x); }
+function inc(n) { return n + 1; }
+apply(inc, 41)
+===
+polymorphic_predicate
+fn eq(x, y) = x == y; eq(1, 1); eq("a", "b")
+---
+function eq(x, y) { return x == y; }
+eq(1, 1);
+eq("a", "b")
+===
+recursive_fact
+fn fact(n) = match(n){case 0 => 1; case _ => n * fact(n - 1)}; fact(5)
+---
+function fact(n) { return (() => { const __match = n; if (__match === 0) { return 1; } else if (true) { return n * fact(n - 1); } return undefined; })(); }
+fact(5)
+===
+mutual_even_odd
+fn is_even(n) = match(n){case 0 => true; case _ => is_odd(n - 1)};
+fn is_odd(n) = match(n){case 0 => false; case _ => is_even(n - 1)};
+is_even(4); is_odd(5)
+---
+function is_even(n) { return (() => { const __match = n; if (__match === 0) { return true; } else if (true) { return is_odd(n - 1); } return undefined; })(); }
+function is_odd(n) { return (() => { const __match = n; if (__match === 0) { return false; } else if (true) { return is_even(n - 1); } return undefined; })(); }
+is_even(4);
+is_odd(5)
