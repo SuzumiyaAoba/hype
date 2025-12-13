@@ -70,6 +70,11 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
             format!("{callee}({})", rendered_args.join(", "))
         }
+        ExprKind::Lambda { params, body } => {
+            let params_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
+            let body_js = render_js(body, 0);
+            format!("(function({}) {{ return {body_js}; }})", params_list.join(", "))
+        }
         ExprKind::Block(stmts) => render_block(stmts),
         ExprKind::Match { expr, arms } => render_match(expr, arms),
         ExprKind::Binary { op, left, right } => {

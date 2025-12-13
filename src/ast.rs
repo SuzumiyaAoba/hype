@@ -50,6 +50,10 @@ pub enum ExprKind {
         callee_span: Range<usize>,
         args: Vec<Expr>,
     },
+    Lambda {
+        params: Vec<(String, Option<Type>)>,
+        body: Box<Expr>,
+    },
     Binary {
         op: BinOp,
         left: Box<Expr>,
