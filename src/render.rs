@@ -96,7 +96,7 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
     let mut lines = Vec::new();
     for stmt in stmts {
         match stmt {
-            Stmt::Let { name, ty, expr } => {
+            Stmt::Let { name, ty, expr, .. } => {
                 let t = ty
                     .as_ref()
                     .or_else(|| env.schemes.get(name).map(|s| &s.ty))

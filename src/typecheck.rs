@@ -145,18 +145,29 @@ pub(crate) fn typecheck(
 
     for stmt in stmts {
         match stmt {
-            Stmt::Let { name, ty, expr } => {
-                let (t, s) = infer_expr(expr, &env, &mut state, source)?;
+            Stmt::Let { name, ty, expr, recursive } => {
+                let mut env_for_infer = env.clone();
+                if *recursive {
+                    let seed = ty.clone().unwrap_or_else(|| state.fresh_var());
+                    env_for_infer.schemes.insert(name.clone(), Scheme { vars: vec![], ty: seed });
+                }
+                let (t, s) = infer_expr(expr, &env_for_infer, &mut state, source)?;
                 let t_app = s.apply(&t);
                 if let Some(annot) = ty {
                     let ann = s.apply(annot);
                     unify(&t_app, &ann, &expr.span, source)?;
-                    env.schemes.insert(name.clone(), generalize(&env, &ann));
+                    env.schemes.insert(
+                        name.clone(),
+                        generalize(&apply_env(&env, &s), &ann),
+                    );
                     crate::debug::log_debug(debug.as_deref_mut(), || {
                         format!("let {name} annotated as {:?}", ann)
                     });
                 } else {
-                    env.schemes.insert(name.clone(), generalize(&env, &t_app));
+                    env.schemes.insert(
+                        name.clone(),
+                        generalize(&apply_env(&env, &s), &t_app),
+                    );
                     crate::debug::log_debug(debug.as_deref_mut(), || format!("let {name} inferred as {:?}", t_app));
                 }
             }
@@ -363,8 +374,13 @@ fn infer_block(
     let mut last_ty = None;
     for stmt in stmts {
         match stmt {
-            Stmt::Let { name, ty, expr } => {
-                let (t, st) = infer_expr(expr, &apply_env(&local_env, &s), state, source)?;
+            Stmt::Let { name, ty, expr, recursive } => {
+                let mut env_infer = apply_env(&local_env, &s);
+                if *recursive {
+                    let seed = ty.as_ref().map(|t| s.apply(t)).unwrap_or_else(|| state.fresh_var());
+                    env_infer.schemes.insert(name.clone(), Scheme { vars: vec![], ty: seed });
+                }
+                let (t, st) = infer_expr(expr, &env_infer, state, source)?;
                 s = s.compose(&st);
                 let t_app = s.apply(&t);
                 if let Some(ann) = ty {

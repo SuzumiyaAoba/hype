@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 52
+assertion_line: 60
 expression: out
 ---
 polymorphic_fn
@@ -64,3 +64,14 @@ start();
 function start() { return is_even(3); }
 function is_even(n) { return (() => { const __match = n; if (__match === 0) { return true; } else if (true) { return is_odd(n - 1); } return undefined; })(); }
 function is_odd(n) { return (() => { const __match = n; if (__match === 0) { return false; } else if (true) { return is_even(n - 1); } return undefined; })(); }
+===
+let_rec_factorial
+let rec fact = \n -> match(n){case 0 => 1; case _ => n * fact(n - 1)}; fact(5)
+---
+let fact = (function(n) { return (() => { const __match = n; if (__match === 0) { return 1; } else if (true) { return n * fact(n - 1); } return undefined; })(); });
+fact(5)
+===
+let_rec_in_block
+{ let rec sum = \n -> match(n){case 0 => 0; case _ => n + sum(n - 1)}; sum(3) }
+---
+(() => { let sum = (function(n) { return (() => { const __match = n; if (__match === 0) { return 0; } else if (true) { return n + sum(n - 1); } return undefined; })(); }); return sum(3); })()

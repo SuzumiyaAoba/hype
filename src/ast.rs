@@ -89,7 +89,7 @@ pub struct Scheme {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let { name: String, ty: Option<Type>, expr: Expr },
+    Let { name: String, ty: Option<Type>, expr: Expr, recursive: bool },
     Fn {
         name: String,
         params: Vec<(String, Option<Type>)>,
