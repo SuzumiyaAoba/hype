@@ -40,6 +40,7 @@ impl Subst {
         match t {
             Type::Var(tv) => self.0.get(tv).cloned().unwrap_or(Type::Var(tv.clone())),
             Type::Tuple(items) => Type::Tuple(items.iter().map(|i| self.apply(i)).collect()),
+            Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Fun(ps, r) => Type::Fun(ps.iter().map(|p| self.apply(p)).collect(), Box::new(self.apply(r))),
             other => other.clone(),
         }
@@ -128,12 +129,29 @@ impl InferState {
     }
 }
 
+fn prelude_env() -> TypeEnv {
+    let mut env = TypeEnv::default();
+    let tv = TypeVarId(0);
+    let fix_ty = Type::Fun(
+        vec![Type::Fun(vec![Type::Var(tv.clone())], Box::new(Type::Var(tv.clone())))],
+        Box::new(Type::Var(tv.clone())),
+    );
+    env.schemes.insert(
+        "fix".to_string(),
+        Scheme {
+            vars: vec![tv],
+            ty: fix_ty,
+        },
+    );
+    env
+}
+
 pub(crate) fn typecheck(
     stmts: &[Stmt],
     source: &str,
     mut debug: Option<&mut DebugInfo>,
 ) -> Result<TypeEnv, ParseError> {
-    let mut env = TypeEnv::default();
+    let mut env = prelude_env();
     let mut state = InferState::default();
 
     let mut fn_seeds: HashMap<String, (Vec<Type>, Type)> = HashMap::new();
@@ -655,6 +673,7 @@ fn occurs(var: &TypeVarId, t: &Type) -> bool {
     match t {
         Type::Var(v) => v == var,
         Type::Tuple(items) => items.iter().any(|p| occurs(var, p)),
+        Type::List(inner) => occurs(var, inner),
         Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
         _ => false,
     }

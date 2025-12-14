@@ -52,6 +52,14 @@ fn transformations() {
             "list_cons_match",
             "match([1, 2]){case [h, ...t] => h; case _ => 0}",
         ),
+        (
+            "list_rest_ignored",
+            "match([1, 2]){case [h, ...] => h; case _ => 0}",
+        ),
+        (
+            "fix_factorial",
+            "let fact = fix(\\rec -> \\n -> match(n){case 0 => 1; case _ => n * rec(n - 1)}); fact(4)",
+        ),
     ];
 
     let mut out = String::new();

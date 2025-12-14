@@ -31,6 +31,9 @@ fn binop_symbol(op: &BinOp) -> &'static str {
 
 pub fn render_program(stmts: &[Stmt]) -> String {
     let mut lines = Vec::new();
+    if needs_fix_prelude(stmts) {
+        lines.push(FIX_JS.to_string());
+    }
     for (i, stmt) in stmts.iter().enumerate() {
         match stmt {
             Stmt::Let { name, expr, .. } => {
@@ -57,6 +60,8 @@ pub fn render_program(stmts: &[Stmt]) -> String {
     }
     lines.join("\n")
 }
+
+const FIX_JS: &str = "function fix(f) { return (function(x) { return f(function(v) { return x(x)(v); }); })(function(x) { return f(function(v) { return x(x)(v); }); }); }";
 
 pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
     match &expr.kind {
@@ -198,11 +203,61 @@ fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String
                 out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
             }
             if let Some(r) = rest {
-                out.push((r.clone(), format!("{var}.slice({})", items.len())));
+                if !r.is_empty() {
+                    out.push((r.clone(), format!("{var}.slice({})", items.len())));
+                }
             }
             out
         }
         _ => Vec::new(),
+    }
+}
+
+fn needs_fix_prelude(stmts: &[Stmt]) -> bool {
+    let mut defined = false;
+    let mut used = false;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, expr, .. } => {
+                if name == "fix" {
+                    defined = true;
+                }
+                if expr_uses_fix(expr) {
+                    used = true;
+                }
+            }
+            Stmt::Fn { name, body, .. } => {
+                if name == "fix" {
+                    defined = true;
+                }
+                if expr_uses_fix(body) {
+                    used = true;
+                }
+            }
+            Stmt::Expr(expr) => {
+                if expr_uses_fix(expr) {
+                    used = true;
+                }
+            }
+        }
+    }
+    used && !defined
+}
+
+fn expr_uses_fix(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Var { name } => name == "fix",
+        ExprKind::Call { callee, args, .. } => callee == "fix" || args.iter().any(expr_uses_fix),
+        ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
+            Stmt::Expr(e) => expr_uses_fix(e),
+            Stmt::Let { expr, .. } => expr_uses_fix(expr),
+            Stmt::Fn { body, .. } => expr_uses_fix(body),
+        }),
+        ExprKind::Match { expr, arms } => expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr)),
+        ExprKind::Binary { left, right, .. } => expr_uses_fix(left) || expr_uses_fix(right),
+        ExprKind::Tuple(items) | ExprKind::List(items) => items.iter().any(expr_uses_fix),
+        ExprKind::Lambda { body, .. } => expr_uses_fix(body),
+        ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) => false,
     }
 }
 

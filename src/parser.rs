@@ -314,6 +314,40 @@ impl Parser {
                     })
                 }
             }
+            Tok::Rec => {
+                let span = self.peek().span.clone();
+                self.advance();
+                let n = "rec".to_string();
+                if matches!(self.peek().kind, Tok::LParen) {
+                    self.advance(); // consume '('
+                    let mut args = Vec::new();
+                    if !matches!(self.peek().kind, Tok::RParen) {
+                        loop {
+                            let arg = self.parse_expression(0)?;
+                            args.push(arg);
+                            if matches!(self.peek().kind, Tok::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    let rparen_span = self.expect(Tok::RParen)?;
+                    Ok(Expr {
+                        span: span.start..rparen_span.end,
+                        kind: ExprKind::Call {
+                            callee: n,
+                            callee_span: span,
+                            args,
+                        },
+                    })
+                } else {
+                    Ok(Expr {
+                        span: span.clone(),
+                        kind: ExprKind::Var { name: n },
+                    })
+                }
+            }
             Tok::Minus => {
                 // unary minus
                 let start = self.peek().span.start;
@@ -396,20 +430,7 @@ impl Parser {
             self.advance();
             if !matches!(self.peek().kind, Tok::RParen) {
                 loop {
-                    let pname = match &self.peek().kind {
-                        Tok::Ident(s) => {
-                            let n = s.clone();
-                            self.advance();
-                            n
-                        }
-                        _ => {
-                            return Err(ParseError {
-                                message: "expected parameter name".into(),
-                                span: self.peek().span.clone(),
-                                source: String::new(),
-                            })
-                        }
-                    };
+                    let pname = self.parse_name()?;
                     let pty = if matches!(self.peek().kind, Tok::Colon) {
                         self.advance();
                         Some(self.parse_type()?)
@@ -427,20 +448,7 @@ impl Parser {
             }
             self.expect(Tok::RParen)?;
         } else {
-            let pname = match &self.peek().kind {
-                Tok::Ident(s) => {
-                    let n = s.clone();
-                    self.advance();
-                    n
-                }
-                _ => {
-                    return Err(ParseError {
-                        message: "expected parameter name".into(),
-                        span: self.peek().span.clone(),
-                        source: String::new(),
-                    })
-                }
-            };
+            let pname = self.parse_name()?;
             let pty = if matches!(self.peek().kind, Tok::Colon) {
                 self.advance();
                 Some(self.parse_type()?)
@@ -542,7 +550,7 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
-        let mut pat = match &self.peek().kind {
+        let pat = match &self.peek().kind {
             Tok::Underscore => {
                 self.advance();
                 Pattern::Wildcard
@@ -569,6 +577,14 @@ impl Parser {
                 let n = name.clone();
                 self.advance();
                 Pattern::Bind(n)
+            }
+            Tok::Rec => {
+                let span = self.peek().span.clone();
+                return Err(ParseError {
+                    message: "expected pattern".into(),
+                    span,
+                    source: String::new(),
+                });
             }
             Tok::LParen => {
                 let _start = self.expect(Tok::LParen)?;
@@ -598,21 +614,12 @@ impl Parser {
                     loop {
                         if matches!(self.peek().kind, Tok::Ellipsis) {
                             self.advance();
-                            let name = match &self.peek().kind {
-                                Tok::Ident(s) => {
-                                    let n = s.clone();
-                                    self.advance();
-                                    n
-                                }
-                                _ => {
-                                    return Err(ParseError {
-                                        message: "expected identifier after '...'".into(),
-                                        span: self.peek().span.clone(),
-                                        source: String::new(),
-                                    })
-                                }
-                            };
-                            rest = Some(name);
+                            if let Tok::Ident(s) = &self.peek().kind {
+                                rest = Some(s.clone());
+                                self.advance();
+                            } else {
+                                rest = Some(String::new());
+                            }
                             break;
                         }
                         let p = self.parse_pattern()?;
@@ -638,5 +645,24 @@ impl Parser {
         };
 
         Ok(pat)
+    }
+
+    fn parse_name(&mut self) -> Result<String, ParseError> {
+        match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                Ok(n)
+            }
+            Tok::Rec => {
+                self.advance();
+                Ok("rec".to_string())
+            }
+            _ => Err(ParseError {
+                message: "expected parameter name".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
     }
 }
