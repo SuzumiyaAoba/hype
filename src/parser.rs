@@ -277,6 +277,7 @@ impl Parser {
                     kind: ExprKind::Str(inner),
                 })
             }
+            Tok::LBracket => self.parse_list_expr(),
             Tok::LBrace => self.parse_block_expr(),
             Tok::Match => self.parse_match_expr(),
             Tok::Ident(name) => {
@@ -337,6 +338,28 @@ impl Parser {
                 source: String::new(),
             }),
         }
+    }
+
+    fn parse_list_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.expect(Tok::LBracket)?.start;
+        let mut items = Vec::new();
+        if !matches!(self.peek().kind, Tok::RBracket) {
+            loop {
+                let expr = self.parse_expression(0)?;
+                items.push(expr);
+                if matches!(self.peek().kind, Tok::Comma) {
+                    self.advance();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+        let end = self.expect(Tok::RBracket)?.end;
+        Ok(Expr {
+            span: start..end,
+            kind: ExprKind::List(items),
+        })
     }
 
     fn parse_paren_or_tuple(&mut self) -> Result<Expr, ParseError> {
@@ -519,28 +542,33 @@ impl Parser {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
-        match &self.peek().kind {
+        let mut pat = match &self.peek().kind {
             Tok::Underscore => {
                 self.advance();
-                Ok(Pattern::Wildcard)
+                Pattern::Wildcard
             }
             Tok::True => {
                 self.advance();
-                Ok(Pattern::Bool(true))
+                Pattern::Bool(true)
             }
             Tok::False => {
                 self.advance();
-                Ok(Pattern::Bool(false))
+                Pattern::Bool(false)
             }
             Tok::Number(n) => {
                 let value = *n;
                 self.advance();
-                Ok(Pattern::Number(value))
+                Pattern::Number(value)
             }
             Tok::Str(raw) => {
                 let inner = raw.trim_matches('"').to_string();
                 self.advance();
-                Ok(Pattern::Str(inner))
+                Pattern::Str(inner)
+            }
+            Tok::Ident(name) => {
+                let n = name.clone();
+                self.advance();
+                Pattern::Bind(n)
             }
             Tok::LParen => {
                 let _start = self.expect(Tok::LParen)?;
@@ -556,17 +584,59 @@ impl Parser {
                         }
                     }
                     let _ = self.expect(Tok::RParen)?;
-                    Ok(Pattern::Tuple(items))
+                    Pattern::Tuple(items)
                 } else {
                     let _ = self.expect(Tok::RParen)?;
-                    Ok(first)
+                    first
                 }
             }
-            _ => Err(ParseError {
-                message: "expected pattern".into(),
-                span: self.peek().span.clone(),
-                source: String::new(),
-            }),
-        }
+            Tok::LBracket => {
+                self.advance();
+                let mut items = Vec::new();
+                let mut rest = None;
+                if !matches!(self.peek().kind, Tok::RBracket) {
+                    loop {
+                        if matches!(self.peek().kind, Tok::Ellipsis) {
+                            self.advance();
+                            let name = match &self.peek().kind {
+                                Tok::Ident(s) => {
+                                    let n = s.clone();
+                                    self.advance();
+                                    n
+                                }
+                                _ => {
+                                    return Err(ParseError {
+                                        message: "expected identifier after '...'".into(),
+                                        span: self.peek().span.clone(),
+                                        source: String::new(),
+                                    })
+                                }
+                            };
+                            rest = Some(name);
+                            break;
+                        }
+                        let p = self.parse_pattern()?;
+                        items.push(p);
+                        if matches!(self.peek().kind, Tok::Comma) {
+                            self.advance();
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                let _ = self.expect(Tok::RBracket)?;
+                Pattern::List { items, rest }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected pattern".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+
+        Ok(pat)
     }
 }

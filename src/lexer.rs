@@ -39,16 +39,24 @@ pub(crate) enum Tok {
     LParen,
     #[token(")")]
     RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token("=>")]
     Arrow,
     #[token("->")]
     ThinArrow,
+    #[token("...")]
+    Ellipsis,
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
     Str(String),
     #[token(",")]
     Comma,
     #[token("=")]
     Eq,
+    #[token("::")]
+    Cons,
     #[token(";")]
     Semi,
     #[token("_", priority = 2)]
