@@ -7,14 +7,12 @@ use crate::error::ParseError;
 pub(crate) enum Tok {
     #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Number(f64),
-    #[token("+")]
-    Plus,
-    #[token("-")]
-    Minus,
-    #[token("*")]
-    Star,
-    #[token("/")]
-    Slash,
+    #[token("...")]
+    Ellipsis,
+    #[token("->")]
+    ThinArrow,
+    #[token("=>")]
+    Arrow,
     #[token("==")]
     EqEq,
     #[token("!=")]
@@ -27,6 +25,14 @@ pub(crate) enum Tok {
     Less,
     #[token(">")]
     Greater,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
     #[token("&&")]
     AndAnd,
     #[token("||")]
@@ -39,10 +45,10 @@ pub(crate) enum Tok {
     LParen,
     #[token(")")]
     RParen,
-    #[token("=>")]
-    Arrow,
-    #[token("->")]
-    ThinArrow,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
     Str(String),
     #[token(",")]

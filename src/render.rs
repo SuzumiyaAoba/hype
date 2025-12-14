@@ -31,6 +31,9 @@ fn binop_symbol(op: &BinOp) -> &'static str {
 
 pub fn render_program(stmts: &[Stmt]) -> String {
     let mut lines = Vec::new();
+    if needs_fix_prelude(stmts) {
+        lines.push(FIX_JS.to_string());
+    }
     for (i, stmt) in stmts.iter().enumerate() {
         match stmt {
             Stmt::Let { name, expr, .. } => {
@@ -58,6 +61,8 @@ pub fn render_program(stmts: &[Stmt]) -> String {
     lines.join("\n")
 }
 
+const FIX_JS: &str = "function fix(f) { return (function(x) { return f(function(v) { return x(x)(v); }); })(function(x) { return f(function(v) { return x(x)(v); }); }); }";
+
 pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
     match &expr.kind {
         ExprKind::Number(n) => {
@@ -66,6 +71,10 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Str(s) => format!("\"{}\"", escape_js_str(s)),
         ExprKind::Tuple(items) => {
+            let parts: Vec<String> = items.iter().map(|e| render_js(e, 0)).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        ExprKind::List(items) => {
             let parts: Vec<String> = items.iter().map(|e| render_js(e, 0)).collect();
             format!("[{}]", parts.join(", "))
         }
@@ -150,6 +159,7 @@ fn render_number_literal(n: f64) -> String {
 fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
     match pat {
         crate::ast::Pattern::Wildcard => "true".to_string(),
+        crate::ast::Pattern::Bind(_) => "true".to_string(),
         crate::ast::Pattern::Bool(b) => format!("{var} === {b}"),
         crate::ast::Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
         crate::ast::Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
@@ -161,6 +171,93 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
             }
             conds.join(" && ")
         }
+        crate::ast::Pattern::List { items, rest } => {
+            let len_cond = if rest.is_some() {
+                format!("{var}.length >= {}", items.len())
+            } else {
+                format!("{var}.length === {}", items.len())
+            };
+            let mut conds = vec![format!("Array.isArray({var})"), len_cond];
+            for (i, pat) in items.iter().enumerate() {
+                let inner_var = format!("{var}[{i}]");
+                conds.push(render_pattern_condition(&inner_var, pat));
+            }
+            conds.join(" && ")
+        }
+    }
+}
+
+fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String)> {
+    match pat {
+        crate::ast::Pattern::Bind(name) => vec![(name.clone(), var.to_string())],
+        crate::ast::Pattern::Tuple(items) => {
+            let mut out = Vec::new();
+            for (i, p) in items.iter().enumerate() {
+                out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
+            }
+            out
+        }
+        crate::ast::Pattern::List { items, rest } => {
+            let mut out = Vec::new();
+            for (i, p) in items.iter().enumerate() {
+                out.extend(pattern_bindings(&format!("{var}[{i}]"), p));
+            }
+            if let Some(r) = rest {
+                if !r.is_empty() {
+                    out.push((r.clone(), format!("{var}.slice({})", items.len())));
+                }
+            }
+            out
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn needs_fix_prelude(stmts: &[Stmt]) -> bool {
+    let mut defined = false;
+    let mut used = false;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Let { name, expr, .. } => {
+                if name == "fix" {
+                    defined = true;
+                }
+                if expr_uses_fix(expr) {
+                    used = true;
+                }
+            }
+            Stmt::Fn { name, body, .. } => {
+                if name == "fix" {
+                    defined = true;
+                }
+                if expr_uses_fix(body) {
+                    used = true;
+                }
+            }
+            Stmt::Expr(expr) => {
+                if expr_uses_fix(expr) {
+                    used = true;
+                }
+            }
+        }
+    }
+    used && !defined
+}
+
+fn expr_uses_fix(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Var { name } => name == "fix",
+        ExprKind::Call { callee, args, .. } => callee == "fix" || args.iter().any(expr_uses_fix),
+        ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
+            Stmt::Expr(e) => expr_uses_fix(e),
+            Stmt::Let { expr, .. } => expr_uses_fix(expr),
+            Stmt::Fn { body, .. } => expr_uses_fix(body),
+        }),
+        ExprKind::Match { expr, arms } => expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr)),
+        ExprKind::Binary { left, right, .. } => expr_uses_fix(left) || expr_uses_fix(right),
+        ExprKind::Tuple(items) | ExprKind::List(items) => items.iter().any(expr_uses_fix),
+        ExprKind::Lambda { body, .. } => expr_uses_fix(body),
+        ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) => false,
     }
 }
 
@@ -198,11 +295,14 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
     parts.push(format!("const __match = {scrutinee};"));
     for (i, arm) in arms.iter().enumerate() {
         let cond = render_pattern_condition("__match", &arm.pat);
+        let bindings = pattern_bindings("__match", &arm.pat);
+        let decls: Vec<String> = bindings.iter().map(|(n, e)| format!("const {n} = {e};")).collect();
+        let binds_js = if decls.is_empty() { String::new() } else { format!("{} ", decls.join(" ")) };
         let body = render_js(&arm.expr, 0);
         if i == 0 {
-            parts.push(format!("if ({cond}) {{ return {body}; }}"));
+            parts.push(format!("if ({cond}) {{ {binds_js}return {body}; }}"));
         } else {
-            parts.push(format!("else if ({cond}) {{ return {body}; }}"));
+            parts.push(format!("else if ({cond}) {{ {binds_js}return {body}; }}"));
         }
     }
     parts.push("return undefined;".to_string());
