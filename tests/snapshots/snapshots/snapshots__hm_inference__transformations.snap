@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 70
+assertion_line: 74
 expression: out
 ---
 polymorphic_fn
@@ -95,3 +95,8 @@ list_cons_match
 match([1, 2]){case [h, ...t] => h; case _ => 0}
 ---
 (() => { const __match = [1, 2]; if (Array.isArray(__match) && __match.length >= 1 && true) { const h = __match[0]; const t = __match.slice(1); return h; } else if (true) { return 0; } return undefined; })()
+===
+list_rest_ignored
+match([1, 2]){case [h, ...] => h; case _ => 0}
+---
+(() => { const __match = [1, 2]; if (Array.isArray(__match) && __match.length === 1 && true) { const h = __match[0]; return h; } else if (true) { return 0; } return undefined; })()

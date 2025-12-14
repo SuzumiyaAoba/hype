@@ -598,21 +598,10 @@ impl Parser {
                     loop {
                         if matches!(self.peek().kind, Tok::Ellipsis) {
                             self.advance();
-                            let name = match &self.peek().kind {
-                                Tok::Ident(s) => {
-                                    let n = s.clone();
-                                    self.advance();
-                                    n
-                                }
-                                _ => {
-                                    return Err(ParseError {
-                                        message: "expected identifier after '...'".into(),
-                                        span: self.peek().span.clone(),
-                                        source: String::new(),
-                                    })
-                                }
-                            };
-                            rest = Some(name);
+                            if let Tok::Ident(s) = &self.peek().kind {
+                                rest = Some(s.clone());
+                                self.advance();
+                            }
                             break;
                         }
                         let p = self.parse_pattern()?;
