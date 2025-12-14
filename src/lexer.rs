@@ -73,6 +73,8 @@ pub(crate) enum Tok {
     Let,
     #[token("fn")]
     Fn,
+    #[token("external")]
+    External,
     #[token("true")]
     True,
     #[token("false")]

@@ -12,6 +12,7 @@ pub struct TypeEnv {
 
 pub fn type_name(t: &Type) -> String {
     match t {
+        Type::Unit => "Unit".into(),
         Type::Number => "Number".into(),
         Type::String => "String".into(),
         Type::Bool => "Bool".into(),
@@ -235,6 +236,12 @@ pub(crate) fn typecheck(
                 );
                 env.schemes.insert(name.clone(), generalize(&apply_env(&env, &s_body), &fn_ty));
                 crate::debug::log_debug(debug.as_deref_mut(), || format!("fn {name} inferred as {:?}", fn_ty));
+            }
+            Stmt::External { name, ty, .. } => {
+                env.schemes.insert(name.clone(), Scheme { vars: vec![], ty: ty.clone() });
+                crate::debug::log_debug(debug.as_deref_mut(), || {
+                    format!("external {name} declared as {:?}", ty)
+                });
             }
             Stmt::Expr(expr) => {
                 let _ = infer_expr(expr, &env, &mut state, source)?;
@@ -490,6 +497,9 @@ fn infer_block(
                     .schemes
                     .insert(name.clone(), generalize(&apply_env(&local_env, &s), &fn_ty));
             }
+            Stmt::External { name, ty, .. } => {
+                local_env.schemes.insert(name.clone(), Scheme { vars: vec![], ty: ty.clone() });
+            }
             Stmt::Expr(expr) => {
                 let (t, st) = infer_expr(expr, &apply_env(&local_env, &s), state, source)?;
                 s = s.compose(&st);
@@ -640,6 +650,7 @@ fn unify(a: &Type, b: &Type, span: &Range<usize>, source: &str) -> Result<Subst,
         (Type::List(a), Type::List(b)) => unify(a, b, span, source),
         (Type::Var(v), t) => bind(v, t, span, source),
         (t, Type::Var(v)) => bind(v, t, span, source),
+        (Type::Unit, Type::Unit) => Ok(Subst::new()),
         (Type::Number, Type::Number) => Ok(Subst::new()),
         (Type::String, Type::String) => Ok(Subst::new()),
         (Type::Bool, Type::Bool) => Ok(Subst::new()),

@@ -60,6 +60,18 @@ fn transformations() {
             "fix_factorial",
             "let fact = fix(\\rec -> \\n -> match(n){case 0 => 1; case _ => n * rec(n - 1)}); fact(4)",
         ),
+        (
+            "external_simple",
+            "external log: String -> Unit = \"console.log\"; log(\"hello\")",
+        ),
+        (
+            "external_with_return",
+            "external parse_int: String -> Number = \"parseInt\"; parse_int(\"42\") + 1",
+        ),
+        (
+            "external_multi_arg",
+            "external pow: (Number, Number) -> Number = \"Math.pow\"; pow(2, 10)",
+        ),
     ];
 
     let mut out = String::new();
