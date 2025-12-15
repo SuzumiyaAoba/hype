@@ -1,0 +1,11 @@
+external log: String -> Unit = "console.log"
+external pow: (Number, Number) -> Number = "Math.pow"
+external parse_int: String -> Number = "parseInt"
+
+log("Hello from Hype!")
+
+let result = pow(2, 10)
+
+let n = parse_int("42") + 1
+
+n

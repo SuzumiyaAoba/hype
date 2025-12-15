@@ -55,6 +55,10 @@ impl Parser {
                     stmts.push(self.parse_fn()?);
                     self.optional_semi();
                 }
+                Tok::External => {
+                    stmts.push(self.parse_external()?);
+                    self.optional_semi();
+                }
                 _ => {
                     let expr = self.parse_expression(0)?;
                     stmts.push(Stmt::Expr(expr));
@@ -170,10 +174,58 @@ impl Parser {
         })
     }
 
+    fn parse_external(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::External)?;
+        let name = match &self.peek().kind {
+            Tok::Ident(s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected external function name".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        self.expect(Tok::Colon)?;
+        let ty = self.parse_type()?;
+        self.expect(Tok::Eq)?;
+        let js_name = match &self.peek().kind {
+            Tok::Str(s) => {
+                let inner = s.trim_matches('"').to_string();
+                self.advance();
+                inner
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected JavaScript function name as string".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        Ok(Stmt::External { name, ty, js_name })
+    }
+
     fn parse_type(&mut self) -> Result<Type, ParseError> {
+        let left = self.parse_type_atom()?;
+        if matches!(self.peek().kind, Tok::ThinArrow) {
+            self.advance();
+            let right = self.parse_type()?;
+            Ok(Type::Fun(vec![left], Box::new(right)))
+        } else {
+            Ok(left)
+        }
+    }
+
+    fn parse_type_atom(&mut self) -> Result<Type, ParseError> {
         match &self.peek().kind {
             Tok::Ident(name) => {
                 let ty = match name.as_str() {
+                    "Unit" => Type::Unit,
                     "Number" => Type::Number,
                     "String" => Type::String,
                     "Bool" => Type::Bool,
@@ -190,6 +242,10 @@ impl Parser {
             }
             Tok::LParen => {
                 let _ = self.expect(Tok::LParen)?;
+                if matches!(self.peek().kind, Tok::RParen) {
+                    self.advance();
+                    return Ok(Type::Unit);
+                }
                 let first = self.parse_type()?;
                 if matches!(self.peek().kind, Tok::Comma) {
                     let mut items = vec![first];
@@ -202,11 +258,23 @@ impl Parser {
                         }
                     }
                     self.expect(Tok::RParen)?;
-                    Ok(Type::Tuple(items))
+                    if matches!(self.peek().kind, Tok::ThinArrow) {
+                        self.advance();
+                        let ret = self.parse_type()?;
+                        Ok(Type::Fun(items, Box::new(ret)))
+                    } else {
+                        Ok(Type::Tuple(items))
+                    }
                 } else {
                     self.expect(Tok::RParen)?;
                     Ok(first)
                 }
+            }
+            Tok::LBracket => {
+                self.advance();
+                let inner = self.parse_type()?;
+                self.expect(Tok::RBracket)?;
+                Ok(Type::List(Box::new(inner)))
             }
             _ => Err(ParseError {
                 message: "expected type".into(),

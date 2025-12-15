@@ -2,6 +2,7 @@ use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
+    Unit,
     Number,
     String,
     Bool,
@@ -105,6 +106,11 @@ pub enum Stmt {
         params: Vec<(String, Option<Type>)>,
         ret: Option<Type>,
         body: Expr,
+    },
+    External {
+        name: String,
+        ty: Type,
+        js_name: String,
     },
     Expr(Expr),
 }
