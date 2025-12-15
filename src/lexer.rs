@@ -75,6 +75,8 @@ pub(crate) enum Tok {
     Fn,
     #[token("external")]
     External,
+    #[token("import")]
+    Import,
     #[token("true")]
     True,
     #[token("false")]

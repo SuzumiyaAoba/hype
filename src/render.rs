@@ -51,6 +51,9 @@ pub fn render_program(stmts: &[Stmt]) -> String {
             Stmt::External { name, js_name, .. } => {
                 lines.push(format!("const {name} = {js_name};"));
             }
+            Stmt::Import { .. } => {
+                // Import statements are resolved before rendering
+            }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
                 if i == stmts.len() - 1 {
@@ -144,6 +147,9 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
             }
             Stmt::External { name, ty, js_name } => {
                 lines.push(format!("external {name}: {} = \"{js_name}\";", type_name(ty)));
+            }
+            Stmt::Import { path } => {
+                lines.push(format!("import \"{path}\";"));
             }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
@@ -245,6 +251,9 @@ fn needs_fix_prelude(stmts: &[Stmt]) -> bool {
                     defined = true;
                 }
             }
+            Stmt::Import { .. } => {
+                // Import statements don't define or use fix
+            }
             Stmt::Expr(expr) => {
                 if expr_uses_fix(expr) {
                     used = true;
@@ -263,7 +272,7 @@ fn expr_uses_fix(expr: &Expr) -> bool {
             Stmt::Expr(e) => expr_uses_fix(e),
             Stmt::Let { expr, .. } => expr_uses_fix(expr),
             Stmt::Fn { body, .. } => expr_uses_fix(body),
-            Stmt::External { .. } => false,
+            Stmt::External { .. } | Stmt::Import { .. } => false,
         }),
         ExprKind::Match { expr, arms } => expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr)),
         ExprKind::Binary { left, right, .. } => expr_uses_fix(left) || expr_uses_fix(right),
@@ -296,6 +305,9 @@ fn render_block(stmts: &[Stmt]) -> String {
             }
             Stmt::External { name, js_name, .. } => {
                 parts.push(format!("const {name} = {js_name};"));
+            }
+            Stmt::Import { .. } => {
+                // Import statements are resolved before rendering
             }
         }
     }

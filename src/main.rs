@@ -1,11 +1,12 @@
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Hype arithmetic transpiler")]
 struct Args {
-    /// 式を文字列で指定（未指定なら REPL）
+    /// 式を文字列で指定、または .hp/.ffi.hp ファイルパス（未指定なら REPL）
     expr: Option<String>,
     /// REPL を起動
     #[arg(long)]
@@ -36,11 +37,24 @@ fn main() {
     }
 
     let expr = args.expr.expect("expr provided");
-    match hype::transpile(&expr) {
-        Ok(js) => println!("{js}"),
-        Err(e) => {
-            eprintln!("{}", hype::format_error(&e));
-            std::process::exit(1);
+
+    // Check if input is a file path (.hp or .ffi.hp)
+    let path = Path::new(&expr);
+    if path.extension().is_some_and(|e| e == "hp") || expr.ends_with(".ffi.hp") {
+        match hype::transpile_file(path) {
+            Ok(js) => println!("{js}"),
+            Err(e) => {
+                eprintln!("{}", hype::format_error(&e));
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match hype::transpile(&expr) {
+            Ok(js) => println!("{js}"),
+            Err(e) => {
+                eprintln!("{}", hype::format_error(&e));
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -83,7 +97,7 @@ fn repl() {
 
 fn run_buffer(rl: &mut DefaultEditor, buf: &mut String) {
     let src = buf.trim();
-    match hype::transpile(src) {
+    match hype::transpile_repl(src) {
         Ok(js) => {
             println!("{js}");
             let _ = rl.add_history_entry(src);

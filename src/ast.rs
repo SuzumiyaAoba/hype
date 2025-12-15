@@ -100,6 +100,7 @@ pub struct Scheme {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
+    Import { path: String },
     Let { name: String, ty: Option<Type>, expr: Expr, recursive: bool },
     Fn {
         name: String,
