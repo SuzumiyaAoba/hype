@@ -47,6 +47,10 @@ impl Parser {
         let mut stmts = Vec::new();
         while !matches!(self.peek().kind, Tok::Eof) {
             match self.peek().kind {
+                Tok::Import => {
+                    stmts.push(self.parse_import()?);
+                    self.optional_semi();
+                }
                 Tok::Let => {
                     stmts.push(self.parse_let()?);
                     self.optional_semi();
@@ -67,6 +71,25 @@ impl Parser {
             }
         }
         Ok(stmts)
+    }
+
+    fn parse_import(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::Import)?;
+        let path = match &self.peek().kind {
+            Tok::Str(s) => {
+                let inner = s.trim_matches('"').to_string();
+                self.advance();
+                inner
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "expected import path as string".into(),
+                    span: self.peek().span.clone(),
+                    source: String::new(),
+                })
+            }
+        };
+        Ok(Stmt::Import { path })
     }
 
     fn optional_semi(&mut self) {

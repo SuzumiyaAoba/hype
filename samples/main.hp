@@ -1,0 +1,8 @@
+import "console.ffi.hp"
+
+fn greet(name) = {
+  log("Hello, " + name + "!");
+  name
+}
+
+greet("World")

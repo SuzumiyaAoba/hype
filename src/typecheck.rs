@@ -246,6 +246,9 @@ pub(crate) fn typecheck(
             Stmt::Expr(expr) => {
                 let _ = infer_expr(expr, &env, &mut state, source)?;
             }
+            Stmt::Import { .. } => {
+                // Import statements are resolved before type checking
+            }
         }
     }
 
@@ -504,6 +507,9 @@ fn infer_block(
                 let (t, st) = infer_expr(expr, &apply_env(&local_env, &s), state, source)?;
                 s = s.compose(&st);
                 last_ty = Some(s.apply(&t));
+            }
+            Stmt::Import { .. } => {
+                // Import statements are resolved before type checking
             }
         }
     }
