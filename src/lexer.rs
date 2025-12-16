@@ -77,6 +77,10 @@ pub(crate) enum Tok {
     External,
     #[token("import")]
     Import,
+    #[token("type")]
+    Type,
+    #[token("|")]
+    Pipe,
     #[token("true")]
     True,
     #[token("false")]

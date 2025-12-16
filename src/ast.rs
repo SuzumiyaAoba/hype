@@ -10,6 +10,10 @@ pub enum Type {
     Fun(Vec<Type>, Box<Type>),
     Tuple(Vec<Type>),
     List(Box<Type>),
+    Adt {
+        name: String,
+        args: Vec<Type>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,6 +68,10 @@ pub enum ExprKind {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    Constructor {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +86,10 @@ pub enum Pattern {
         rest: Option<String>,
     },
     Bind(String),
+    Constructor {
+        name: String,
+        fields: Vec<(String, Pattern)>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +111,12 @@ pub struct Scheme {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Variant {
+    pub name: String,
+    pub fields: Vec<(String, Type)>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Import { path: String },
     Let { name: String, ty: Option<Type>, expr: Expr, recursive: bool },
@@ -112,6 +130,11 @@ pub enum Stmt {
         name: String,
         ty: Type,
         js_name: String,
+    },
+    TypeDecl {
+        name: String,
+        params: Vec<String>,
+        variants: Vec<Variant>,
     },
     Expr(Expr),
 }

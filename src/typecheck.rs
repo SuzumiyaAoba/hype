@@ -5,9 +5,18 @@ use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Scheme, Stmt, Type, TypeVarI
 use crate::debug::DebugInfo;
 use crate::error::ParseError;
 
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    #[allow(dead_code)]
+    pub name: String,
+    pub params: Vec<String>,
+    pub variants: HashMap<String, Vec<(String, Type)>>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TypeEnv {
     pub schemes: HashMap<String, Scheme>,
+    pub type_defs: HashMap<String, TypeDef>,
 }
 
 pub fn type_name(t: &Type) -> String {
@@ -26,6 +35,14 @@ pub fn type_name(t: &Type) -> String {
             let ps: Vec<String> = params.iter().map(type_name).collect();
             format!("({}) -> {}", ps.join(", "), type_name(ret))
         }
+        Type::Adt { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let args_str: Vec<String> = args.iter().map(type_name).collect();
+                format!("{}<{}>", name, args_str.join(", "))
+            }
+        }
     }
 }
 
@@ -43,6 +60,10 @@ impl Subst {
             Type::Tuple(items) => Type::Tuple(items.iter().map(|i| self.apply(i)).collect()),
             Type::List(inner) => Type::List(Box::new(self.apply(inner))),
             Type::Fun(ps, r) => Type::Fun(ps.iter().map(|p| self.apply(p)).collect(), Box::new(self.apply(r))),
+            Type::Adt { name, args } => Type::Adt {
+                name: name.clone(),
+                args: args.iter().map(|a| self.apply(a)).collect(),
+            },
             other => other.clone(),
         }
     }
@@ -76,6 +97,11 @@ fn free_type_vars(t: &Type, acc: &mut HashSet<TypeVarId>) {
                 free_type_vars(p, acc);
             }
             free_type_vars(r, acc);
+        }
+        Type::Adt { args, .. } => {
+            for arg in args {
+                free_type_vars(arg, acc);
+            }
         }
         _ => {}
     }
@@ -249,6 +275,40 @@ pub(crate) fn typecheck(
             Stmt::Import { .. } => {
                 // Import statements are resolved before type checking
             }
+            Stmt::TypeDecl { name, params, variants } => {
+                // Register type definition
+                let mut variant_map = HashMap::new();
+                for v in variants {
+                    variant_map.insert(v.name.clone(), v.fields.clone());
+                }
+                let type_def = TypeDef {
+                    name: name.clone(),
+                    params: params.clone(),
+                    variants: variant_map,
+                };
+                env.type_defs.insert(name.clone(), type_def);
+
+                // Register constructors as functions
+                for v in variants {
+                    let result_ty = if params.is_empty() {
+                        Type::Adt { name: name.clone(), args: vec![] }
+                    } else {
+                        Type::Adt {
+                            name: name.clone(),
+                            args: params.iter().map(|p| Type::Adt { name: p.clone(), args: vec![] }).collect(),
+                        }
+                    };
+
+                    let ctor_ty = if v.fields.is_empty() {
+                        result_ty.clone()
+                    } else {
+                        let field_types: Vec<Type> = v.fields.iter().map(|(_, t)| t.clone()).collect();
+                        Type::Fun(field_types, Box::new(result_ty.clone()))
+                    };
+
+                    env.schemes.insert(v.name.clone(), Scheme { vars: vec![], ty: ctor_ty });
+                }
+            }
         }
     }
 
@@ -400,6 +460,94 @@ fn infer_expr(
         }
         ExprKind::Block(stmts) => infer_block(stmts, env, state, source, &expr.span),
         ExprKind::Match { expr, arms } => infer_match(expr, arms, env, state, source, &expr.span),
+        ExprKind::Constructor { name, fields } => {
+            // Look up constructor in type_defs
+            let (type_name, type_params, field_types) = find_constructor(env, name).ok_or_else(|| ParseError {
+                message: format!("unknown constructor `{}`", name),
+                span: expr.span.clone(),
+                source: source.to_string(),
+            })?;
+
+            let mut s = Subst::new();
+
+            // Create fresh type variables for each type parameter
+            let mut param_map: HashMap<String, Type> = HashMap::new();
+            let mut type_args: Vec<Type> = Vec::new();
+            for param in &type_params {
+                let tv = state.fresh_var();
+                param_map.insert(param.clone(), tv.clone());
+                type_args.push(tv);
+            }
+
+            // Check that all required fields are provided
+            if fields.len() != field_types.len() {
+                return Err(ParseError {
+                    message: format!(
+                        "constructor `{}` expects {} fields, got {}",
+                        name,
+                        field_types.len(),
+                        fields.len()
+                    ),
+                    span: expr.span.clone(),
+                    source: source.to_string(),
+                });
+            }
+
+            // Type check each field with substituted type params
+            for (field_name, field_expr) in fields {
+                let expected_ty = field_types
+                    .iter()
+                    .find(|(n, _)| n == field_name)
+                    .map(|(_, t)| substitute_type_params(t, &param_map))
+                    .ok_or_else(|| ParseError {
+                        message: format!("unknown field `{}` in constructor `{}`", field_name, name),
+                        span: field_expr.span.clone(),
+                        source: source.to_string(),
+                    })?;
+
+                let (actual_ty, field_s) = infer_expr(field_expr, &apply_env(env, &s), state, source)?;
+                s = s.compose(&field_s);
+                unify(&s.apply(&expected_ty), &s.apply(&actual_ty), &field_expr.span, source)?;
+            }
+
+            let result_ty = Type::Adt {
+                name: type_name,
+                args: type_args.iter().map(|a| s.apply(a)).collect(),
+            };
+            Ok((result_ty, s))
+        }
+    }
+}
+
+fn find_constructor(env: &TypeEnv, ctor_name: &str) -> Option<(String, Vec<String>, Vec<(String, Type)>)> {
+    for (type_name, type_def) in &env.type_defs {
+        if let Some(fields) = type_def.variants.get(ctor_name) {
+            return Some((type_name.clone(), type_def.params.clone(), fields.clone()));
+        }
+    }
+    None
+}
+
+fn substitute_type_params(ty: &Type, param_map: &HashMap<String, Type>) -> Type {
+    match ty {
+        Type::Adt { name, args } if args.is_empty() => {
+            if let Some(replacement) = param_map.get(name) {
+                replacement.clone()
+            } else {
+                ty.clone()
+            }
+        }
+        Type::Adt { name, args } => Type::Adt {
+            name: name.clone(),
+            args: args.iter().map(|a| substitute_type_params(a, param_map)).collect(),
+        },
+        Type::Tuple(items) => Type::Tuple(items.iter().map(|i| substitute_type_params(i, param_map)).collect()),
+        Type::List(inner) => Type::List(Box::new(substitute_type_params(inner, param_map))),
+        Type::Fun(ps, r) => Type::Fun(
+            ps.iter().map(|p| substitute_type_params(p, param_map)).collect(),
+            Box::new(substitute_type_params(r, param_map)),
+        ),
+        _ => ty.clone(),
     }
 }
 
@@ -511,6 +659,31 @@ fn infer_block(
             Stmt::Import { .. } => {
                 // Import statements are resolved before type checking
             }
+            Stmt::TypeDecl { name, params, variants } => {
+                // Register type definition in local environment
+                let mut variant_map = HashMap::new();
+                for v in variants {
+                    variant_map.insert(v.name.clone(), v.fields.clone());
+                }
+                let type_def = TypeDef {
+                    name: name.clone(),
+                    params: params.clone(),
+                    variants: variant_map,
+                };
+                local_env.type_defs.insert(name.clone(), type_def);
+
+                // Register constructors
+                for v in variants {
+                    let result_ty = Type::Adt { name: name.clone(), args: vec![] };
+                    let ctor_ty = if v.fields.is_empty() {
+                        result_ty.clone()
+                    } else {
+                        let field_types: Vec<Type> = v.fields.iter().map(|(_, t)| t.clone()).collect();
+                        Type::Fun(field_types, Box::new(result_ty))
+                    };
+                    local_env.schemes.insert(v.name.clone(), Scheme { vars: vec![], ty: ctor_ty });
+                }
+            }
         }
     }
     last_ty
@@ -543,7 +716,7 @@ fn infer_match(
     for arm in arms {
         let mut env_arm = apply_env(env, &s);
         let scrut = s.apply(&scrut_ty);
-        let (pat_ty, bindings) = pattern_info(&arm.pat, state);
+        let (pat_ty, bindings) = pattern_info(&arm.pat, &env_arm, state);
         let su = unify(&scrut, &pat_ty, span, source)?;
         s = s.compose(&su);
         for (name, ty) in bindings {
@@ -569,7 +742,7 @@ fn infer_match(
         })
 }
 
-fn pattern_info(pat: &Pattern, state: &mut InferState) -> (Type, Vec<(String, Type)>) {
+fn pattern_info(pat: &Pattern, env: &TypeEnv, state: &mut InferState) -> (Type, Vec<(String, Type)>) {
     match pat {
         Pattern::Wildcard => (state.fresh_var(), Vec::new()),
         Pattern::Bind(name) => {
@@ -584,7 +757,7 @@ fn pattern_info(pat: &Pattern, state: &mut InferState) -> (Type, Vec<(String, Ty
             let elems = items
                 .iter()
                 .map(|p| {
-                    let (t, b) = pattern_info(p, state);
+                    let (t, b) = pattern_info(p, env, state);
                     binds.extend(b);
                     t
                 })
@@ -594,20 +767,63 @@ fn pattern_info(pat: &Pattern, state: &mut InferState) -> (Type, Vec<(String, Ty
         Pattern::List { items, rest } => {
             let mut binds = Vec::new();
             let elem_ty = if let Some(first) = items.first() {
-                let (t, b) = pattern_info(first, state);
+                let (t, b) = pattern_info(first, env, state);
                 binds.extend(b);
                 t
             } else {
                 state.fresh_var()
             };
             for p in items.iter().skip(1) {
-                let (_t, b) = pattern_info(p, state);
+                let (_t, b) = pattern_info(p, env, state);
                 binds.extend(b);
             }
             if let Some(name) = rest {
                 binds.push((name.clone(), Type::List(Box::new(elem_ty.clone()))));
             }
             (Type::List(Box::new(elem_ty)), binds)
+        }
+        Pattern::Constructor { name, fields } => {
+            // Look up constructor to get the proper type
+            if let Some((type_name, type_params, field_types)) = find_constructor(env, name) {
+                let mut binds = Vec::new();
+
+                // Create fresh type variables for type parameters
+                let mut param_map: HashMap<String, Type> = HashMap::new();
+                let mut type_args: Vec<Type> = Vec::new();
+                for param in &type_params {
+                    let tv = state.fresh_var();
+                    param_map.insert(param.clone(), tv.clone());
+                    type_args.push(tv);
+                }
+
+                // Process field patterns and collect bindings
+                for (field_name, field_pat) in fields {
+                    let (_, field_binds) = pattern_info(field_pat, env, state);
+                    binds.extend(field_binds);
+
+                    // Find the expected field type and substitute type params
+                    if let Some((_, expected_ty)) = field_types.iter().find(|(n, _)| n == field_name) {
+                        let expected_ty = substitute_type_params(expected_ty, &param_map);
+                        // Add constraint that field pattern type should match expected
+                        // This will be handled by unification later
+                        if let Pattern::Bind(bind_name) = field_pat {
+                            // Override the fresh type with the expected type
+                            binds.retain(|(n, _)| n != bind_name);
+                            binds.push((bind_name.clone(), expected_ty));
+                        }
+                    }
+                }
+
+                (Type::Adt { name: type_name, args: type_args }, binds)
+            } else {
+                // Constructor not found - return a fresh type variable and let error be caught later
+                let mut binds = Vec::new();
+                for (_, field_pat) in fields {
+                    let (_, field_binds) = pattern_info(field_pat, env, state);
+                    binds.extend(field_binds);
+                }
+                (state.fresh_var(), binds)
+            }
         }
     }
 }
@@ -654,6 +870,28 @@ fn unify(a: &Type, b: &Type, span: &Range<usize>, source: &str) -> Result<Subst,
             Ok(subst)
         }
         (Type::List(a), Type::List(b)) => unify(a, b, span, source),
+        (Type::Adt { name: na, args: aa }, Type::Adt { name: nb, args: ab }) => {
+            if na != nb {
+                return Err(ParseError {
+                    message: format!("type mismatch: {} vs {}", na, nb),
+                    span: span.clone(),
+                    source: source.to_string(),
+                });
+            }
+            if aa.len() != ab.len() {
+                return Err(ParseError {
+                    message: format!("type argument count mismatch for {}", na),
+                    span: span.clone(),
+                    source: source.to_string(),
+                });
+            }
+            let mut subst = Subst::new();
+            for (ta, tb) in aa.iter().zip(ab.iter()) {
+                let su = unify(&subst.apply(ta), &subst.apply(tb), span, source)?;
+                subst = subst.compose(&su);
+            }
+            Ok(subst)
+        }
         (Type::Var(v), t) => bind(v, t, span, source),
         (t, Type::Var(v)) => bind(v, t, span, source),
         (Type::Unit, Type::Unit) => Ok(Subst::new()),
@@ -692,6 +930,7 @@ fn occurs(var: &TypeVarId, t: &Type) -> bool {
         Type::Tuple(items) => items.iter().any(|p| occurs(var, p)),
         Type::List(inner) => occurs(var, inner),
         Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
+        Type::Adt { args, .. } => args.iter().any(|a| occurs(var, a)),
         _ => false,
     }
 }
