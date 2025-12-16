@@ -54,6 +54,9 @@ pub fn render_program(stmts: &[Stmt]) -> String {
             Stmt::Import { .. } => {
                 // Import statements are resolved before rendering
             }
+            Stmt::TypeDecl { .. } => {
+                // Type declarations don't produce JS output
+            }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
                 if i == stmts.len() - 1 {
@@ -108,6 +111,17 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
                 expr_str
             }
         }
+        ExprKind::Constructor { name, fields } => {
+            if fields.is_empty() {
+                format!("{{ __tag: \"{}\" }}", name)
+            } else {
+                let field_parts: Vec<String> = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, render_js(v, 0)))
+                    .collect();
+                format!("{{ __tag: \"{}\", {} }}", name, field_parts.join(", "))
+            }
+        }
     }
 }
 
@@ -150,6 +164,29 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
             }
             Stmt::Import { path } => {
                 lines.push(format!("import \"{path}\";"));
+            }
+            Stmt::TypeDecl { name, params, variants } => {
+                let params_str = if params.is_empty() {
+                    String::new()
+                } else {
+                    format!("<{}>", params.join(", "))
+                };
+                let variants_str: Vec<String> = variants
+                    .iter()
+                    .map(|v| {
+                        if v.fields.is_empty() {
+                            v.name.clone()
+                        } else {
+                            let fields: Vec<String> = v
+                                .fields
+                                .iter()
+                                .map(|(n, t)| format!("{}: {}", n, type_name(t)))
+                                .collect();
+                            format!("{} {{ {} }}", v.name, fields.join(", "))
+                        }
+                    })
+                    .collect();
+                lines.push(format!("type {}{} = {};", name, params_str, variants_str.join(" | ")));
             }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
@@ -196,6 +233,17 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
             }
             conds.join(" && ")
         }
+        crate::ast::Pattern::Constructor { name, fields } => {
+            let mut conds = vec![format!("{var}.__tag === \"{}\"", name)];
+            for (field_name, field_pat) in fields {
+                let inner_var = format!("{var}.{field_name}");
+                let cond = render_pattern_condition(&inner_var, field_pat);
+                if cond != "true" {
+                    conds.push(cond);
+                }
+            }
+            conds.join(" && ")
+        }
     }
 }
 
@@ -218,6 +266,13 @@ fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String
                 if !r.is_empty() {
                     out.push((r.clone(), format!("{var}.slice({})", items.len())));
                 }
+            }
+            out
+        }
+        crate::ast::Pattern::Constructor { fields, .. } => {
+            let mut out = Vec::new();
+            for (field_name, field_pat) in fields {
+                out.extend(pattern_bindings(&format!("{var}.{field_name}"), field_pat));
             }
             out
         }
@@ -254,6 +309,9 @@ fn needs_fix_prelude(stmts: &[Stmt]) -> bool {
             Stmt::Import { .. } => {
                 // Import statements don't define or use fix
             }
+            Stmt::TypeDecl { .. } => {
+                // Type declarations don't define or use fix
+            }
             Stmt::Expr(expr) => {
                 if expr_uses_fix(expr) {
                     used = true;
@@ -272,12 +330,13 @@ fn expr_uses_fix(expr: &Expr) -> bool {
             Stmt::Expr(e) => expr_uses_fix(e),
             Stmt::Let { expr, .. } => expr_uses_fix(expr),
             Stmt::Fn { body, .. } => expr_uses_fix(body),
-            Stmt::External { .. } | Stmt::Import { .. } => false,
+            Stmt::External { .. } | Stmt::Import { .. } | Stmt::TypeDecl { .. } => false,
         }),
         ExprKind::Match { expr, arms } => expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr)),
         ExprKind::Binary { left, right, .. } => expr_uses_fix(left) || expr_uses_fix(right),
         ExprKind::Tuple(items) | ExprKind::List(items) => items.iter().any(expr_uses_fix),
         ExprKind::Lambda { body, .. } => expr_uses_fix(body),
+        ExprKind::Constructor { fields, .. } => fields.iter().any(|(_, e)| expr_uses_fix(e)),
         ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) => false,
     }
 }
@@ -308,6 +367,9 @@ fn render_block(stmts: &[Stmt]) -> String {
             }
             Stmt::Import { .. } => {
                 // Import statements are resolved before rendering
+            }
+            Stmt::TypeDecl { .. } => {
+                // Type declarations don't produce JS output
             }
         }
     }

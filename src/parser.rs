@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Stmt, Type};
+use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Stmt, Type, Variant};
 use crate::error::ParseError;
 use crate::lexer::{Token, Tok};
 
@@ -61,6 +61,10 @@ impl Parser {
                 }
                 Tok::External => {
                     stmts.push(self.parse_external()?);
+                    self.optional_semi();
+                }
+                Tok::Type => {
+                    stmts.push(self.parse_type_decl()?);
                     self.optional_semi();
                 }
                 _ => {
@@ -233,6 +237,90 @@ impl Parser {
         Ok(Stmt::External { name, ty, js_name })
     }
 
+    fn parse_type_decl(&mut self) -> Result<Stmt, ParseError> {
+        self.expect(Tok::Type)?;
+        let name = self.expect_upper_ident()?;
+
+        // Parse optional type parameters <A, B, ...>
+        let params = if matches!(self.peek().kind, Tok::Less) {
+            self.advance();
+            let mut params = Vec::new();
+            loop {
+                let param = self.expect_upper_ident()?;
+                params.push(param);
+                if matches!(self.peek().kind, Tok::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            self.expect(Tok::Greater)?;
+            params
+        } else {
+            Vec::new()
+        };
+
+        self.expect(Tok::Eq)?;
+
+        // Parse variants: Variant1 | Variant2 | ...
+        let mut variants = Vec::new();
+        loop {
+            let variant = self.parse_variant()?;
+            variants.push(variant);
+            if matches!(self.peek().kind, Tok::Pipe) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        Ok(Stmt::TypeDecl { name, params, variants })
+    }
+
+    fn parse_variant(&mut self) -> Result<Variant, ParseError> {
+        let name = self.expect_upper_ident()?;
+
+        // Parse optional fields { field1: Type1, field2: Type2, ... }
+        let fields = if matches!(self.peek().kind, Tok::LBrace) {
+            self.advance();
+            let mut fields = Vec::new();
+            if !matches!(self.peek().kind, Tok::RBrace) {
+                loop {
+                    let field_name = self.parse_name()?;
+                    self.expect(Tok::Colon)?;
+                    let field_ty = self.parse_type()?;
+                    fields.push((field_name, field_ty));
+                    if matches!(self.peek().kind, Tok::Comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            self.expect(Tok::RBrace)?;
+            fields
+        } else {
+            Vec::new()
+        };
+
+        Ok(Variant { name, fields })
+    }
+
+    fn expect_upper_ident(&mut self) -> Result<String, ParseError> {
+        match &self.peek().kind {
+            Tok::Ident(s) if s.chars().next().is_some_and(|c| c.is_ascii_uppercase()) => {
+                let n = s.clone();
+                self.advance();
+                Ok(n)
+            }
+            _ => Err(ParseError {
+                message: "expected uppercase identifier".into(),
+                span: self.peek().span.clone(),
+                source: String::new(),
+            }),
+        }
+    }
+
     fn parse_type(&mut self) -> Result<Type, ParseError> {
         let left = self.parse_type_atom()?;
         if matches!(self.peek().kind, Tok::ThinArrow) {
@@ -247,21 +335,38 @@ impl Parser {
     fn parse_type_atom(&mut self) -> Result<Type, ParseError> {
         match &self.peek().kind {
             Tok::Ident(name) => {
-                let ty = match name.as_str() {
-                    "Unit" => Type::Unit,
-                    "Number" => Type::Number,
-                    "String" => Type::String,
-                    "Bool" => Type::Bool,
-                    _ => {
-                        return Err(ParseError {
-                            message: format!("unknown type '{}'", name),
-                            span: self.peek().span.clone(),
-                            source: String::new(),
-                        })
-                    }
-                };
+                let name_str = name.clone();
                 self.advance();
-                Ok(ty)
+
+                // Check if it's a built-in type
+                match name_str.as_str() {
+                    "Unit" => return Ok(Type::Unit),
+                    "Number" => return Ok(Type::Number),
+                    "String" => return Ok(Type::String),
+                    "Bool" => return Ok(Type::Bool),
+                    _ => {}
+                }
+
+                // ADT type reference: Name<Type, Type, ...>
+                let args = if matches!(self.peek().kind, Tok::Less) {
+                    self.advance();
+                    let mut args = Vec::new();
+                    loop {
+                        let arg = self.parse_type()?;
+                        args.push(arg);
+                        if matches!(self.peek().kind, Tok::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    self.expect(Tok::Greater)?;
+                    args
+                } else {
+                    Vec::new()
+                };
+
+                Ok(Type::Adt { name: name_str, args })
             }
             Tok::LParen => {
                 let _ = self.expect(Tok::LParen)?;
@@ -374,8 +479,38 @@ impl Parser {
             Tok::Ident(name) => {
                 let n = name.clone();
                 let span = self.peek().span.clone();
+                let is_upper = n.chars().next().is_some_and(|c| c.is_ascii_uppercase());
                 self.advance();
-                if matches!(self.peek().kind, Tok::LParen) {
+
+                if is_upper && matches!(self.peek().kind, Tok::LBrace) {
+                    // Constructor expression: Name { field: expr, ... }
+                    self.advance();
+                    let mut fields = Vec::new();
+                    if !matches!(self.peek().kind, Tok::RBrace) {
+                        loop {
+                            let field_name = self.parse_name()?;
+                            self.expect(Tok::Colon)?;
+                            let field_expr = self.parse_expression(0)?;
+                            fields.push((field_name, field_expr));
+                            if matches!(self.peek().kind, Tok::Comma) {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    let end_span = self.expect(Tok::RBrace)?;
+                    Ok(Expr {
+                        span: span.start..end_span.end,
+                        kind: ExprKind::Constructor { name: n, fields },
+                    })
+                } else if is_upper {
+                    // Constructor with no fields: Name
+                    Ok(Expr {
+                        span: span.clone(),
+                        kind: ExprKind::Constructor { name: n, fields: Vec::new() },
+                    })
+                } else if matches!(self.peek().kind, Tok::LParen) {
                     self.advance(); // consume '('
                     let mut args = Vec::new();
                     if !matches!(self.peek().kind, Tok::RParen) {
@@ -666,8 +801,41 @@ impl Parser {
             }
             Tok::Ident(name) => {
                 let n = name.clone();
+                let is_upper = n.chars().next().is_some_and(|c| c.is_ascii_uppercase());
                 self.advance();
-                Pattern::Bind(n)
+
+                if is_upper {
+                    // Constructor pattern: Name or Name { field: pat, ... }
+                    let fields = if matches!(self.peek().kind, Tok::LBrace) {
+                        self.advance();
+                        let mut fields = Vec::new();
+                        if !matches!(self.peek().kind, Tok::RBrace) {
+                            loop {
+                                let field_name = self.parse_name()?;
+                                let field_pat = if matches!(self.peek().kind, Tok::Colon) {
+                                    self.advance();
+                                    self.parse_pattern()?
+                                } else {
+                                    // Shorthand: { x } is equivalent to { x: x }
+                                    Pattern::Bind(field_name.clone())
+                                };
+                                fields.push((field_name, field_pat));
+                                if matches!(self.peek().kind, Tok::Comma) {
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        self.expect(Tok::RBrace)?;
+                        fields
+                    } else {
+                        Vec::new()
+                    };
+                    Pattern::Constructor { name: n, fields }
+                } else {
+                    Pattern::Bind(n)
+                }
             }
             Tok::Rec => {
                 let span = self.peek().span.clone();

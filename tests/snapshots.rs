@@ -15,3 +15,6 @@ mod hm_inference;
 
 #[path = "snapshots/error_output.rs"]
 mod error_output;
+
+#[path = "snapshots/adt.rs"]
+mod adt;
