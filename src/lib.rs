@@ -2,6 +2,7 @@ pub mod ast;
 mod debug;
 pub mod error;
 mod lexer;
+pub mod lisp;
 mod parser;
 mod render;
 mod typecheck;
