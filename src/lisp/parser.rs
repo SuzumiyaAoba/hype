@@ -40,8 +40,8 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self) -> &Token {
-        let token = self.current();
+    fn advance(&mut self) -> Token {
+        let token = self.current().clone();
         self.pos += 1;
         token
     }
