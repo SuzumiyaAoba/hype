@@ -1,6 +1,4 @@
-use std::ops::Range;
-
-use crate::ast::{BinOp, Expr, ExprKind, Pattern, Stmt, Type};
+use crate::ast::{BinOp, Expr, ExprKind, Stmt};
 
 use super::parser::Sexp;
 
@@ -223,7 +221,7 @@ impl Transformer {
             } else {
                 // Non-last expressions become statements
                 match sexp {
-                    Sexp::List(ref list_items) if list_items.first().map(|s| self.is_symbol(s, "let")).unwrap_or(false) => {
+                    Sexp::List(list_items) if list_items.first().map(|s| self.is_symbol(s, "let")).unwrap_or(false) => {
                         // Transform let as a statement
                         let let_expr = self.transform_let(list_items)?;
                         if let ExprKind::Block(mut block_stmts) = let_expr.kind {
