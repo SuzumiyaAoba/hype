@@ -105,6 +105,12 @@ impl Transformer {
             Sexp::Tagged(_, _) => {
                 return Err("Tagged expressions (HTML) not yet supported".to_string());
             }
+            Sexp::Colon => {
+                return Err("Colon (:) is not a valid expression".to_string());
+            }
+            Sexp::Arrow => {
+                return Err("Arrow (->) is not a valid expression".to_string());
+            }
         };
 
         Ok(Expr { kind, span })
