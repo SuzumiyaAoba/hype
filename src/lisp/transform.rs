@@ -1,6 +1,7 @@
-use crate::ast::{BinOp, Expr, ExprKind, Stmt};
+use crate::ast::{BinOp, Expr, ExprKind, Stmt, Type};
 
 use super::parser::Sexp;
+use super::transform_type::parse_type;
 
 pub struct Transformer {
     source: String,
