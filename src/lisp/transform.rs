@@ -1,6 +1,7 @@
-use crate::ast::{BinOp, Expr, ExprKind, Stmt};
+use crate::ast::{BinOp, Expr, ExprKind, Stmt, Type};
 
 use super::parser::Sexp;
+use super::transform_type::parse_type;
 
 pub struct Transformer {
     source: String,
@@ -103,6 +104,12 @@ impl Transformer {
             }
             Sexp::Tagged(_, _) => {
                 return Err("Tagged expressions (HTML) not yet supported".to_string());
+            }
+            Sexp::Colon => {
+                return Err("Colon (:) is not a valid expression".to_string());
+            }
+            Sexp::Arrow => {
+                return Err("Arrow (->) is not a valid expression".to_string());
             }
         };
 
@@ -249,10 +256,7 @@ impl Transformer {
 
         let params = match &items[0] {
             Sexp::Vector(params) => {
-                params.iter().map(|p| match p {
-                    Sexp::Symbol(name) => Ok((name.clone(), None)),
-                    _ => Err("lambda parameter must be a symbol".to_string()),
-                }).collect::<Result<Vec<_>, _>>()?
+                self.parse_params(params)?
             }
             _ => return Err("fn parameters must be a vector".to_string()),
         };
@@ -264,6 +268,7 @@ impl Transformer {
 
     fn transform_defn(&mut self, items: &[Sexp]) -> Result<Stmt, String> {
         // (defn name [params] body)
+        // または (defn name [params] -> ReturnType body)
         if items.len() < 4 {
             return Err("defn requires name, parameters, and body".to_string());
         }
@@ -275,22 +280,58 @@ impl Transformer {
 
         let params = match &items[2] {
             Sexp::Vector(params) => {
-                params.iter().map(|p| match p {
-                    Sexp::Symbol(name) => Ok((name.clone(), None)),
-                    _ => Err("defn parameter must be a symbol".to_string()),
-                }).collect::<Result<Vec<_>, _>>()?
+                self.parse_params(params)?
             }
             _ => return Err("defn parameters must be a vector".to_string()),
         };
 
-        let body = self.transform_expr(items[3].clone())?;
+        // Check for return type annotation: -> Type
+        let (ret, body_idx) = if items.len() > 4 && matches!(&items[3], Sexp::Arrow) {
+            // (defn name [params] -> RetType body)
+            let ret_type = parse_type(&items[4])?;
+            (Some(ret_type), 5)
+        } else {
+            (None, 3)
+        };
+
+        if body_idx >= items.len() {
+            return Err("defn requires a body expression".to_string());
+        }
+
+        let body = self.transform_expr(items[body_idx].clone())?;
 
         Ok(Stmt::Fn {
             name,
             params,
-            ret: None,
+            ret,
             body,
         })
+    }
+
+    fn parse_params(&self, params: &[Sexp]) -> Result<Vec<(String, Option<Type>)>, String> {
+        let mut result = Vec::new();
+        let mut i = 0;
+
+        while i < params.len() {
+            match &params[i] {
+                Sexp::Symbol(name) => {
+                    // Check if next is a colon (type annotation)
+                    if i + 2 < params.len() && matches!(&params[i + 1], Sexp::Colon) {
+                        // x: Type
+                        let ty = parse_type(&params[i + 2])?;
+                        result.push((name.clone(), Some(ty)));
+                        i += 3; // Skip name, colon, and type
+                    } else {
+                        // Just a name without type
+                        result.push((name.clone(), None));
+                        i += 1;
+                    }
+                }
+                _ => return Err(format!("Expected parameter name, found {:?}", params[i])),
+            }
+        }
+
+        Ok(result)
     }
 
     fn is_symbol(&self, sexp: &Sexp, name: &str) -> bool {
@@ -407,6 +448,43 @@ mod tests {
                 }
             }
             _ => panic!("Expected Fn statement"),
+        }
+    }
+
+    #[test]
+    fn test_defn_with_type_annotations() {
+        let stmts = parse_and_transform("(defn add [x: Number y: Number] -> Number (+ x y))").unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Fn { name, params, ret, .. } => {
+                assert_eq!(name, "add");
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0].0, "x");
+                assert!(matches!(params[0].1, Some(Type::Number)));
+                assert_eq!(params[1].0, "y");
+                assert!(matches!(params[1].1, Some(Type::Number)));
+                assert!(matches!(ret, Some(Type::Number)));
+            }
+            _ => panic!("Expected Fn statement"),
+        }
+    }
+
+    #[test]
+    fn test_lambda_with_type_annotations() {
+        let stmts = parse_and_transform("(fn [x: Number] (* x 2))").unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Expr(expr) => {
+                match &expr.kind {
+                    ExprKind::Lambda { params, .. } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(params[0].0, "x");
+                        assert!(matches!(params[0].1, Some(Type::Number)));
+                    }
+                    _ => panic!("Expected Lambda expression"),
+                }
+            }
+            _ => panic!("Expected Expr statement"),
         }
     }
 }

@@ -12,6 +12,8 @@ pub enum Sexp {
     Vector(Vec<Sexp>),              // []
     Map(Vec<(Sexp, Sexp)>),         // {}
     Tagged(String, Vec<Sexp>),      // <tag attrs children>
+    Colon,                          // : (for type annotations)
+    Arrow,                          // -> (for function types)
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +89,14 @@ impl Parser {
             Token::Symbol(s) => {
                 self.advance();
                 Sexp::Symbol(s)
+            }
+            Token::Colon => {
+                self.advance();
+                Sexp::Colon
+            }
+            Token::Arrow => {
+                self.advance();
+                Sexp::Arrow
             }
             Token::LParen => self.parse_list()?,
             Token::LBracket => self.parse_vector()?,
