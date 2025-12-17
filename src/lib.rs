@@ -3,6 +3,7 @@ mod debug;
 pub mod error;
 mod lexer;
 pub mod lisp;
+mod lisp_transpile;
 mod parser;
 mod render;
 mod typecheck;
@@ -13,6 +14,7 @@ use std::path::{Path, PathBuf};
 pub use ast::{BinOp, Expr, ExprKind, FnSig, MatchArm, Pattern, Stmt, Type};
 pub use debug::{render_debug_text, DebugInfo};
 pub use error::{format_error, ParseError};
+pub use lisp_transpile::parse_lisp;
 pub use render::render_program;
 
 /// Source context determines how `external` declarations are handled
