@@ -88,8 +88,10 @@ impl Transformer {
                             .map(|arg| self.transform_expr(arg.clone()))
                             .collect();
                         ExprKind::Call {
-                            callee: name.clone(),
-                            callee_span: span.clone(),
+                            callee: Box::new(Expr {
+                                kind: ExprKind::Var { name: name.clone() },
+                                span: span.clone(),
+                            }),
                             args: args?,
                         }
                     }

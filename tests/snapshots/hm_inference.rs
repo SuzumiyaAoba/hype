@@ -72,6 +72,18 @@ fn transformations() {
             "external_multi_arg",
             "external pow: (Number, Number) -> Number = \"Math.pow\"; pow(2, 10)",
         ),
+        (
+            "curried_function",
+            "let add = \\x -> \\y -> x + y; add(1)(2)",
+        ),
+        (
+            "chained_call_make_adder",
+            "fn make_adder(x: Number) = \\y -> x + y; make_adder(5)(10)",
+        ),
+        (
+            "nested_closure_capture",
+            "fn outer(x: Number) = { fn inner(y: Number) = \\z -> x + y + z; inner }; outer(1)(2)(3)",
+        ),
     ];
 
     let mut out = String::new();

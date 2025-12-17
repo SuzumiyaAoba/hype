@@ -416,8 +416,12 @@ fn infer_expr(
                 }
             }
         }
-        ExprKind::Call { callee, args, callee_span } => {
+        ExprKind::Call { callee, args } => {
             let mut s = Subst::new();
+            // Infer callee type
+            let (callee_ty, st) = infer_expr(callee, env, state, source)?;
+            s = s.compose(&st);
+            // Infer argument types
             let mut arg_types = Vec::new();
             for arg in args {
                 let (t, st) = infer_expr(arg, &apply_env(env, &s), state, source)?;
@@ -426,15 +430,6 @@ fn infer_expr(
             }
             let ret_ty = state.fresh_var();
             let fn_ty = Type::Fun(arg_types.clone(), Box::new(ret_ty.clone()));
-            let callee_ty = if let Some(sch) = env.schemes.get(callee) {
-                instantiate(sch, state)
-            } else {
-                return Err(ParseError {
-                    message: format!("unknown function '{}'", callee),
-                    span: callee_span.clone(),
-                    source: source.to_string(),
-                });
-            };
             let su = unify(&s.apply(&callee_ty), &fn_ty, &expr.span, source)?;
             s = s.compose(&su);
             Ok((s.apply(&ret_ty), s))

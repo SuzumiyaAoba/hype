@@ -413,7 +413,7 @@ impl Parser {
     }
 
     fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_postfix_expr()?;
 
         while let Some((op, prec)) = self.current_binop() {
             if prec < min_precedence {
@@ -434,6 +434,42 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<Expr, ParseError> {
+        let expr = self.parse_primary()?;
+        self.parse_postfix(expr)
+    }
+
+    fn parse_postfix(&mut self, mut expr: Expr) -> Result<Expr, ParseError> {
+        loop {
+            if matches!(self.peek().kind, Tok::LParen) {
+                self.advance();
+                let mut args = Vec::new();
+                if !matches!(self.peek().kind, Tok::RParen) {
+                    loop {
+                        let arg = self.parse_expression(0)?;
+                        args.push(arg);
+                        if matches!(self.peek().kind, Tok::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                let rparen_span = self.expect(Tok::RParen)?;
+                expr = Expr {
+                    span: expr.span.start..rparen_span.end,
+                    kind: ExprKind::Call {
+                        callee: Box::new(expr),
+                        args,
+                    },
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
@@ -510,29 +546,6 @@ impl Parser {
                         span: span.clone(),
                         kind: ExprKind::Constructor { name: n, fields: Vec::new() },
                     })
-                } else if matches!(self.peek().kind, Tok::LParen) {
-                    self.advance(); // consume '('
-                    let mut args = Vec::new();
-                    if !matches!(self.peek().kind, Tok::RParen) {
-                        loop {
-                            let arg = self.parse_expression(0)?;
-                            args.push(arg);
-                            if matches!(self.peek().kind, Tok::Comma) {
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    let rparen_span = self.expect(Tok::RParen)?;
-                    Ok(Expr {
-                        span: span.start..rparen_span.end,
-                        kind: ExprKind::Call {
-                            callee: n,
-                            callee_span: span,
-                            args,
-                        },
-                    })
                 } else {
                     Ok(Expr {
                         span: span.clone(),
@@ -543,36 +556,10 @@ impl Parser {
             Tok::Rec => {
                 let span = self.peek().span.clone();
                 self.advance();
-                let n = "rec".to_string();
-                if matches!(self.peek().kind, Tok::LParen) {
-                    self.advance(); // consume '('
-                    let mut args = Vec::new();
-                    if !matches!(self.peek().kind, Tok::RParen) {
-                        loop {
-                            let arg = self.parse_expression(0)?;
-                            args.push(arg);
-                            if matches!(self.peek().kind, Tok::Comma) {
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    let rparen_span = self.expect(Tok::RParen)?;
-                    Ok(Expr {
-                        span: span.start..rparen_span.end,
-                        kind: ExprKind::Call {
-                            callee: n,
-                            callee_span: span,
-                            args,
-                        },
-                    })
-                } else {
-                    Ok(Expr {
-                        span: span.clone(),
-                        kind: ExprKind::Var { name: n },
-                    })
-                }
+                Ok(Expr {
+                    span: span.clone(),
+                    kind: ExprKind::Var { name: "rec".to_string() },
+                })
             }
             Tok::Minus => {
                 // unary minus

@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots/hm_inference.rs
-assertion_line: 90
+assertion_line: 102
 expression: out
 ---
 polymorphic_fn
@@ -125,3 +125,21 @@ external pow: (Number, Number) -> Number = "Math.pow"; pow(2, 10)
 ---
 const pow = Math.pow;
 pow(2, 10)
+===
+curried_function
+let add = \x -> \y -> x + y; add(1)(2)
+---
+let add = (function(x) { return (function(y) { return x + y; }); });
+add(1)(2)
+===
+chained_call_make_adder
+fn make_adder(x: Number) = \y -> x + y; make_adder(5)(10)
+---
+function make_adder(x) { return (function(y) { return x + y; }); }
+make_adder(5)(10)
+===
+nested_closure_capture
+fn outer(x: Number) = { fn inner(y: Number) = \z -> x + y + z; inner }; outer(1)(2)(3)
+---
+function outer(x) { return (() => { function inner(y) { return (function(z) { return x + y + z; }); } return inner; })(); }
+outer(1)(2)(3)

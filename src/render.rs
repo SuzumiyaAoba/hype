@@ -88,9 +88,10 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
             format!("[{}]", parts.join(", "))
         }
         ExprKind::Var { name } => name.clone(),
-        ExprKind::Call { callee, args, .. } => {
+        ExprKind::Call { callee, args } => {
+            let callee_js = render_js(callee, 0);
             let rendered_args: Vec<String> = args.iter().map(|a| render_js(a, 0)).collect();
-            format!("{callee}({})", rendered_args.join(", "))
+            format!("{callee_js}({})", rendered_args.join(", "))
         }
         ExprKind::Lambda { params, body } => {
             let params_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
@@ -325,7 +326,7 @@ fn needs_fix_prelude(stmts: &[Stmt]) -> bool {
 fn expr_uses_fix(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Var { name } => name == "fix",
-        ExprKind::Call { callee, args, .. } => callee == "fix" || args.iter().any(expr_uses_fix),
+        ExprKind::Call { callee, args } => expr_uses_fix(callee) || args.iter().any(expr_uses_fix),
         ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
             Stmt::Expr(e) => expr_uses_fix(e),
             Stmt::Let { expr, .. } => expr_uses_fix(expr),

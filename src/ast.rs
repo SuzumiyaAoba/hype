@@ -55,8 +55,7 @@ pub enum ExprKind {
         arms: Vec<MatchArm>,
     },
     Call {
-        callee: String,
-        callee_span: Range<usize>,
+        callee: Box<Expr>,
         args: Vec<Expr>,
     },
     Lambda {
