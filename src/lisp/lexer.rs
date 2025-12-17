@@ -154,7 +154,9 @@ impl Lexer {
         let start = self.pos;
 
         while let Some(ch) = self.current() {
-            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '?' || ch == '!' || ch == '/' {
+            if ch.is_alphanumeric()
+                || ch == '_' || ch == '-' || ch == '?' || ch == '!' || ch == '/'
+                || ch == '+' || ch == '*' || ch == '<' || ch == '>' || ch == '=' {
                 self.advance();
             } else {
                 break;
@@ -199,14 +201,8 @@ impl Lexer {
                 self.advance();
                 Token::RBrace
             }
-            Some('<') => {
-                self.advance();
-                Token::LAngle
-            }
-            Some('>') => {
-                self.advance();
-                Token::RAngle
-            }
+            // Note: < and > are now treated as symbols for comparison operators
+            // HTML tags will use a different syntax in the future
             Some(':') => {
                 self.advance();
                 Token::Colon
@@ -228,7 +224,7 @@ impl Lexer {
                 let num = self.read_number();
                 Token::Number(num)
             }
-            Some(ch) if ch.is_alphabetic() || ch == '_' => {
+            Some(ch) if ch.is_alphabetic() || ch == '_' || ch == '+' || ch == '*' || ch == '<' || ch == '>' || ch == '=' => {
                 let sym = self.read_symbol();
                 match sym.as_str() {
                     "true" => Token::Bool(true),
@@ -269,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_brackets() {
-        let mut lexer = Lexer::new("( ) [ ] { } < >");
+        let mut lexer = Lexer::new("( ) [ ] { }");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
         assert_eq!(
             tokens,
@@ -280,8 +276,23 @@ mod tests {
                 Token::RBracket,
                 Token::LBrace,
                 Token::RBrace,
-                Token::LAngle,
-                Token::RAngle,
+                Token::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        let mut lexer = Lexer::new("< > <= >= ==");
+        let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Symbol("<".to_string()),
+                Token::Symbol(">".to_string()),
+                Token::Symbol("<=".to_string()),
+                Token::Symbol(">=".to_string()),
+                Token::Symbol("==".to_string()),
                 Token::Eof,
             ]
         );
