@@ -280,6 +280,10 @@ mod tests {
         );
     }
 
+    // TODO: Re-implement HTML tag syntax with a different approach
+    // (e.g., special keyword or function-based syntax)
+    // Currently < and > are treated as comparison operators
+    /*
     #[test]
     fn test_parse_tagged() {
         let mut parser = Parser::new("<div>");
@@ -307,4 +311,5 @@ mod tests {
             )
         );
     }
+    */
 }
