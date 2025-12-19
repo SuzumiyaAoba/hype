@@ -9,11 +9,13 @@ pub enum Sexp {
     String(String),
     Bool(bool),
     List(Vec<Sexp>),                // ()
-    Vector(Vec<Sexp>),              // []
+    Vector(Vec<Sexp>),              // [] (space-separated list)
+    Tuple(Vec<Sexp>),               // [,] (comma-separated tuple)
     Map(Vec<(Sexp, Sexp)>),         // {}
     Tagged(String, Vec<Sexp>),      // <tag attrs children>
     Colon,                          // : (for type annotations)
     Arrow,                          // -> (for function types)
+    Ellipsis,                       // ... (for rest patterns)
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +100,10 @@ impl Parser {
                 self.advance();
                 Sexp::Arrow
             }
+            Token::Ellipsis => {
+                self.advance();
+                Sexp::Ellipsis
+            }
             Token::LParen => self.parse_list()?,
             Token::LBracket => self.parse_vector()?,
             Token::LBrace => self.parse_map()?,
@@ -134,13 +140,26 @@ impl Parser {
     fn parse_vector(&mut self) -> Result<Sexp, String> {
         self.expect(Token::LBracket)?;
         let mut elements = Vec::new();
+        let mut has_comma = false;
 
         while !matches!(self.current(), Token::RBracket | Token::Eof) {
             elements.push(self.parse_sexp()?.sexp);
+
+            // Check for comma separator
+            if matches!(self.current(), Token::Comma) {
+                has_comma = true;
+                self.advance();
+            }
         }
 
         self.expect(Token::RBracket)?;
-        Ok(Sexp::Vector(elements))
+
+        // If any comma was found, treat as tuple; otherwise as vector (list)
+        if has_comma {
+            Ok(Sexp::Tuple(elements))
+        } else {
+            Ok(Sexp::Vector(elements))
+        }
     }
 
     fn parse_map(&mut self) -> Result<Sexp, String> {
@@ -148,12 +167,25 @@ impl Parser {
         let mut pairs = Vec::new();
 
         while !matches!(self.current(), Token::RBrace | Token::Eof) {
-            let key = self.parse_sexp()?.sexp;
-
-            // Handle optional colon after key
-            if matches!(self.current(), Token::Colon) {
-                self.advance();
-            }
+            // Handle :keyword style keys
+            let key = if matches!(self.current(), Token::Colon) {
+                self.advance(); // skip colon
+                // Next should be a symbol which becomes the key
+                match self.current().clone() {
+                    Token::Symbol(s) => {
+                        self.advance();
+                        Sexp::Symbol(s)
+                    }
+                    _ => return Err("Expected symbol after : in map key".to_string()),
+                }
+            } else {
+                let key = self.parse_sexp()?.sexp;
+                // Handle optional colon after key (key: value style)
+                if matches!(self.current(), Token::Colon) {
+                    self.advance();
+                }
+                key
+            };
 
             let value = self.parse_sexp()?.sexp;
             pairs.push((key, value));

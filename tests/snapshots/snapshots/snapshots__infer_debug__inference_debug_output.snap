@@ -1,11 +1,8 @@
 ---
 source: tests/snapshots/infer_debug.rs
-assertion_line: 8
 expression: text
 ---
 == annotated ==
-let x: Number = 1 + 2;
-x * 2
+(() => { let x = 1 + 2; return x * 2; })()
 
 == steps ==
-let x inferred as Number

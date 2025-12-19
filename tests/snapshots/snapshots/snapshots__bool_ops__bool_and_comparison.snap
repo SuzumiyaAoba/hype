@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots/bool_ops.rs
-assertion_line: 30
 expression: out
 ---
 true
@@ -11,36 +10,35 @@ false
 ---
 false
 ===
-true && false
+(and true false)
 ---
 true && false
 ===
-true || false && true
+(or true (and false true))
 ---
 true || false && true
 ===
-false && true || true
+(or (and false true) true)
 ---
 false && true || true
 ===
-true && true || false
+(or (and true true) false)
 ---
 true && true || false
 ===
-1 < 2
+(< 1 2)
 ---
 1 < 2
 ===
-1 <= 2 == true
+(== (<= 1 2) true)
 ---
 1 <= 2 == true
 ===
-1 + 2 == 3
+(== (+ 1 2) 3)
 ---
 1 + 2 == 3
 ===
-fn eq(a: Number, b: Number): Bool = a == b;
-eq(1, 1)
+(defn eq [a: Number b: Number] -> Bool (== a b)) (eq 1 1)
 ---
 function eq(a, b) { return a == b; }
 eq(1, 1)

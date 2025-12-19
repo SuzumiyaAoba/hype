@@ -3,14 +3,14 @@ use insta::assert_snapshot;
 #[test]
 fn arithmetic_and_lets() {
     let cases = [
-        "1 + 2 * 3",
-        "(1 + 2) * (3 - 4 / 2)",
-        "-1 + 2 * 3",
-        "let x: Number = 1 + 2;\nlet y: Number = x * 3;\ny - x",
-        "fn add(a: Number, b: Number): Number = a + b;\nlet x: Number = add(2, 3);\nadd(x, 4)",
-        "let hello: String = \"hi\";\nhello + \"!\"",
-        "let x = 1 + 2;\nx",
-        "fn add1(a: Number) = a + 1;\nadd1(2)",
+        "(+ 1 (* 2 3))",
+        "(* (+ 1 2) (- 3 (/ 4 2)))",
+        "(+ (- 1) (* 2 3))",
+        "(let [x (+ 1 2)] (let [y (* x 3)] (- y x)))",
+        "(defn add [a: Number b: Number] -> Number (+ a b)) (let [x (add 2 3)] (add x 4))",
+        "(let [hello \"hi\"] (+ hello \"!\"))",
+        "(let [x (+ 1 2)] x)",
+        "(defn add1 [a: Number] (+ a 1)) (add1 2)",
     ];
 
     let mut out = String::new();

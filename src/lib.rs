@@ -1,10 +1,8 @@
 pub mod ast;
 mod debug;
 pub mod error;
-mod lexer;
 pub mod lisp;
 mod lisp_transpile;
-mod parser;
 mod render;
 mod typecheck;
 
@@ -35,7 +33,8 @@ impl SourceContext {
             SourceContext::Repl => true,   // allowed with warning
             SourceContext::String => true, // allowed for testing/programmatic use
             SourceContext::File(path) => {
-                path.to_string_lossy().ends_with(".ffi.hp")
+                let path_str = path.to_string_lossy();
+                path_str.ends_with(".ffi.lisp") || path_str.ends_with(".ffi.hp")
             }
         }
     }
@@ -101,16 +100,8 @@ fn transpile_with_context(
     base_path: Option<&Path>,
     mut debug: Option<&mut DebugInfo>,
 ) -> Result<String, ParseError> {
-    let tokens = lexer::lex(input)?;
-    let stmts = match parser::parse(tokens) {
-        Ok(s) => s,
-        Err(mut e) => {
-            if e.source.is_empty() {
-                e.source = input.to_string();
-            }
-            return Err(e);
-        }
-    };
+    // Use LISP parser
+    let stmts = parse_lisp(input)?;
 
     // Validate external usage based on context
     validate_external_usage(&stmts, &context, input)?;
@@ -185,11 +176,8 @@ fn resolve_imports(
                     source: String::new(),
                 })?;
 
-                let tokens = lexer::lex(&content)?;
-                let imported_stmts = parser::parse(tokens).map_err(|mut e| {
-                    if e.source.is_empty() {
-                        e.source = content.clone();
-                    }
+                // Use LISP parser for imports
+                let imported_stmts = parse_lisp(&content).map_err(|mut e| {
                     e.message = format!("in import '{}': {}", path, e.message);
                     e
                 })?;

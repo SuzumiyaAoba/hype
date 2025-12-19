@@ -3,14 +3,41 @@ use super::parser::Sexp;
 
 pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
     match sexp {
-        // Simple types: Number, String, Bool
+        // Simple types: Number, String, Bool, or type variable/ADT
         Sexp::Symbol(name) => match name.as_str() {
             "Number" => Ok(Type::Number),
             "String" => Ok(Type::String),
             "Bool" => Ok(Type::Bool),
             "Unit" => Ok(Type::Unit),
-            _ => Err(format!("Unknown type: {}", name)),
+            _ => {
+                // Treat uppercase-starting names as type variables or user-defined types
+                if name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                    // Could be a type variable like A, B, T, etc., or a user-defined ADT
+                    Ok(Type::Adt {
+                        name: name.clone(),
+                        args: Vec::new(),
+                    })
+                } else {
+                    Err(format!("Unknown type: {}", name))
+                }
+            }
         },
+
+        // Arrow-based function type: (-> A B C) means A -> B -> C
+        Sexp::List(items) if !items.is_empty() && matches!(&items[0], Sexp::Arrow) => {
+            if items.len() < 3 {
+                return Err("Arrow function type requires at least input and output types".to_string());
+            }
+            // (-> A B) means A -> B
+            // (-> A B C) means (A, B) -> C
+            let last_idx = items.len() - 1;
+            let ret = parse_type(&items[last_idx])?;
+            let params: Result<Vec<_>, _> = items[1..last_idx]
+                .iter()
+                .map(parse_type)
+                .collect();
+            Ok(Type::Fun(params?, Box::new(ret)))
+        }
 
         // Parametric types: (List Number), (Option String)
         Sexp::List(items) if !items.is_empty() => {

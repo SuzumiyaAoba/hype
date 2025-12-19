@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots/error_output.rs
-assertion_line: 28
 expression: out
 ---
 x
@@ -11,18 +10,18 @@ x
 [90m└[0m  [1m[31m^[0m
    unbound variable 'x'
 ===
-fn f(a: Number): Number = a; f(true)
----
-[1m[31m error[0m
-[90m│[0m  at line 1, col 30
-[90m│[0m  fn f(a: Number): Number = a; [31;4:3mf(true)[0m
-[90m└[0m                               [1m[31m^[0m
-                                type mismatch: Number vs Bool
-===
-1 + true
+(defn f [a: Number] -> Number a) (f true)
 ---
 [1m[31m error[0m
 [90m│[0m  at line 1, col 1
-[90m│[0m  [31;4:3m1 + true[0m
+[90m│[0m  [31;4:3m([0mdefn f [a: Number] -> Number a) (f true)
+[90m└[0m  [1m[31m^[0m
+   type mismatch: Number vs Bool
+===
+(+ 1 true)
+---
+[1m[31m error[0m
+[90m│[0m  at line 1, col 1
+[90m│[0m  [31;4:3m([0m+ 1 true)
 [90m└[0m  [1m[31m^[0m
    type mismatch: Bool vs Number
