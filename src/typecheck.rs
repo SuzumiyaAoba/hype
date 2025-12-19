@@ -4,6 +4,7 @@ use std::ops::Range;
 use crate::ast::{Expr, ExprKind, MatchArm, Pattern, Scheme, Stmt, Type, TypeVarId};
 use crate::debug::DebugInfo;
 use crate::error::ParseError;
+use crate::exhaustive;
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
@@ -728,6 +729,15 @@ fn infer_match(
             result_ty = Some(arm_ty);
         }
     }
+
+    // Check exhaustiveness
+    let final_scrut_ty = s.apply(&scrut_ty);
+    let patterns: Vec<Pattern> = arms.iter().map(|a| a.pat.clone()).collect();
+    let exhaustiveness = exhaustive::check_exhaustiveness(&patterns, &final_scrut_ty, env);
+    if let Some(warning) = exhaustive::format_warning(&exhaustiveness) {
+        eprintln!("warning: {}", warning);
+    }
+
     result_ty
         .map(|t| (t, s))
         .ok_or_else(|| ParseError {

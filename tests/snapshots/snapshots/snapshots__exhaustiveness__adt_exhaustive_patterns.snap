@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/exhaustiveness.rs
+expression: js
+---
+function unwrap_or(opt, default) { return (() => { const __match = opt; if (__match.__tag === "None") { return default; } else if (__match.__tag === "Some") { const v = __match.value; return v; } return undefined; })(); }
+unwrap_or({ __tag: "Some", value: 42 }, 0)
