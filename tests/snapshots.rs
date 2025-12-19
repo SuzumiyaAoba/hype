@@ -18,3 +18,6 @@ mod error_output;
 
 #[path = "snapshots/adt.rs"]
 mod adt;
+
+#[path = "snapshots/exhaustiveness.rs"]
+mod exhaustiveness;

@@ -1,6 +1,7 @@
 pub mod ast;
 mod debug;
 pub mod error;
+mod exhaustive;
 pub mod lisp;
 mod lisp_transpile;
 mod render;
