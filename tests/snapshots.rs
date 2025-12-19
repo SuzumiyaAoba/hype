@@ -21,3 +21,6 @@ mod adt;
 
 #[path = "snapshots/exhaustiveness.rs"]
 mod exhaustiveness;
+
+#[path = "snapshots/match_guards.rs"]
+mod match_guards;

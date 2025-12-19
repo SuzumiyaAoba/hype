@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/match_guards.rs
+expression: js
+---
+function factorial(n) { return (() => { const __match = n; if (__match === 0) { return 1; } else if (true) { const n = __match; if (n > 0) { return n * factorial(n - 1); } } return undefined; })(); }
+factorial(5)

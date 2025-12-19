@@ -384,15 +384,27 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
     let mut parts = Vec::new();
     parts.push(format!("const __match = {scrutinee};"));
     for (i, arm) in arms.iter().enumerate() {
-        let cond = render_pattern_condition("__match", &arm.pat);
+        let pat_cond = render_pattern_condition("__match", &arm.pat);
         let bindings = pattern_bindings("__match", &arm.pat);
         let decls: Vec<String> = bindings.iter().map(|(n, e)| format!("const {n} = {e};")).collect();
         let binds_js = if decls.is_empty() { String::new() } else { format!("{} ", decls.join(" ")) };
         let body = render_js(&arm.expr, 0);
-        if i == 0 {
-            parts.push(format!("if ({cond}) {{ {binds_js}return {body}; }}"));
+
+        // Pattern condition (guard is checked after bindings are established)
+        let cond = pat_cond;
+
+        // If there's a guard, add it as an inner check after bindings
+        let body_with_guard = if let Some(guard) = &arm.guard {
+            let guard_js = render_js(guard, 0);
+            format!("if ({guard_js}) {{ return {body}; }}")
         } else {
-            parts.push(format!("else if ({cond}) {{ {binds_js}return {body}; }}"));
+            format!("return {body};")
+        };
+
+        if i == 0 {
+            parts.push(format!("if ({cond}) {{ {binds_js}{body_with_guard} }}"));
+        } else {
+            parts.push(format!("else if ({cond}) {{ {binds_js}{body_with_guard} }}"));
         }
     }
     parts.push("return undefined;".to_string());

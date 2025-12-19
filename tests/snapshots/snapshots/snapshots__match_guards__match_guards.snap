@@ -1,0 +1,15 @@
+---
+source: tests/snapshots/match_guards.rs
+expression: out
+---
+(match 5 [n :when (> n 3) "big"] [_ "small"])
+---
+(() => { const __match = 5; if (true) { const n = __match; if (n > 3) { return "big"; } } else if (true) { return "small"; } return undefined; })()
+===
+(match 10 [x :when (== x 10) "ten"] [x :when (> x 5) "big"] [_ "other"])
+---
+(() => { const __match = 10; if (true) { const x = __match; if (x == 10) { return "ten"; } } else if (true) { const x = __match; if (x > 5) { return "big"; } } else if (true) { return "other"; } return undefined; })()
+===
+(match true [b :when b "truthy"] [_ "falsy"])
+---
+(() => { const __match = true; if (true) { const b = __match; if (b) { return "truthy"; } } else if (true) { return "falsy"; } return undefined; })()

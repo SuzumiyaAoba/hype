@@ -718,6 +718,13 @@ fn infer_match(
         for (name, ty) in bindings {
             env_arm.schemes.insert(name, Scheme { vars: vec![], ty: s.apply(&ty) });
         }
+        // Type check guard expression if present (must be Bool)
+        if let Some(guard) = &arm.guard {
+            let (guard_ty, sg) = infer_expr(guard, &env_arm, state, source)?;
+            s = s.compose(&sg);
+            let su = unify(&guard_ty, &Type::Bool, &guard.span, source)?;
+            s = s.compose(&su);
+        }
         let (arm_ty, sa) = infer_expr(&arm.expr, &env_arm, state, source)?;
         s = s.compose(&sa);
         let arm_ty = s.apply(&arm_ty);
