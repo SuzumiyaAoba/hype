@@ -24,6 +24,8 @@ pub enum Token {
     Colon,      // :
     Arrow,      // ->
     Ampersand,  // &
+    Comma,      // ,
+    Ellipsis,   // ...
 
     // End of file
     Eof,
@@ -210,6 +212,16 @@ impl Lexer {
             Some('&') => {
                 self.advance();
                 Token::Ampersand
+            }
+            Some(',') => {
+                self.advance();
+                Token::Comma
+            }
+            Some('.') if self.peek(1) == Some('.') && self.peek(2) == Some('.') => {
+                self.advance();
+                self.advance();
+                self.advance();
+                Token::Ellipsis
             }
             Some('-') if self.peek(1) == Some('>') => {
                 self.advance();

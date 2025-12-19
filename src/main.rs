@@ -4,9 +4,9 @@ use rustyline::DefaultEditor;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Hype arithmetic transpiler")]
+#[command(author, version, about = "Hype - LISP-style functional language transpiler")]
 struct Args {
-    /// 式を文字列で指定、または .hp/.ffi.hp ファイルパス（未指定なら REPL）
+    /// LISP式を文字列で指定、または .lisp ファイルパス（未指定なら REPL）
     expr: Option<String>,
     /// REPL を起動
     #[arg(long)]
@@ -38,9 +38,9 @@ fn main() {
 
     let expr = args.expr.expect("expr provided");
 
-    // Check if input is a file path (.hp or .ffi.hp)
+    // Check if input is a file path (.lisp)
     let path = Path::new(&expr);
-    if path.extension().is_some_and(|e| e == "hp") || expr.ends_with(".ffi.hp") {
+    if path.extension().is_some_and(|e| e == "lisp") || path.exists() {
         match hype::transpile_file(path) {
             Ok(js) => println!("{js}"),
             Err(e) => {
@@ -62,7 +62,8 @@ fn main() {
 fn repl() {
     let mut rl = DefaultEditor::new().expect("init readline");
     let mut buf = String::new();
-    println!("Hype REPL: 空行で入力を確定、:q で終了");
+    println!("Hype REPL (LISP syntax): 空行で入力を確定、:q で終了");
+    println!("例: (+ 1 2), (defn add [x y] (+ x y))");
     loop {
         let prompt = if buf.is_empty() { "> " } else { "| " };
         match rl.readline(prompt) {

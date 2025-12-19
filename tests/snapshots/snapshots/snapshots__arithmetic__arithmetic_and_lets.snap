@@ -1,50 +1,37 @@
 ---
 source: tests/snapshots/arithmetic.rs
-assertion_line: 28
 expression: out
 ---
-1 + 2 * 3
+(+ 1 (* 2 3))
 ---
 1 + 2 * 3
 ===
-(1 + 2) * (3 - 4 / 2)
+(* (+ 1 2) (- 3 (/ 4 2)))
 ---
 (1 + 2) * (3 - 4 / 2)
 ===
--1 + 2 * 3
+(+ (- 1) (* 2 3))
 ---
 0 - 1 + 2 * 3
 ===
-let x: Number = 1 + 2;
-let y: Number = x * 3;
-y - x
+(let [x (+ 1 2)] (let [y (* x 3)] (- y x)))
 ---
-let x = 1 + 2;
-let y = x * 3;
-y - x
+(() => { let x = 1 + 2; return (() => { let y = x * 3; return y - x; })(); })()
 ===
-fn add(a: Number, b: Number): Number = a + b;
-let x: Number = add(2, 3);
-add(x, 4)
+(defn add [a: Number b: Number] -> Number (+ a b)) (let [x (add 2 3)] (add x 4))
 ---
 function add(a, b) { return a + b; }
-let x = add(2, 3);
-add(x, 4)
+(() => { let x = add(2, 3); return add(x, 4); })()
 ===
-let hello: String = "hi";
-hello + "!"
+(let [hello "hi"] (+ hello "!"))
 ---
-let hello = "hi";
-hello + "!"
+(() => { let hello = "hi"; return hello + "!"; })()
 ===
-let x = 1 + 2;
-x
+(let [x (+ 1 2)] x)
 ---
-let x = 1 + 2;
-x
+(() => { let x = 1 + 2; return x; })()
 ===
-fn add1(a: Number) = a + 1;
-add1(2)
+(defn add1 [a: Number] (+ a 1)) (add1 2)
 ---
 function add1(a) { return a + 1; }
 add1(2)

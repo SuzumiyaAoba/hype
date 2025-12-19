@@ -1,34 +1,31 @@
 ---
 source: tests/snapshots/adt.rs
-assertion_line: 33
 expression: out
 ---
-type Bool = True | False; True
+(deftype Bool True False) True
 ---
 { __tag: "True" }
 ===
-type Box = Value { x: Number }; Value { x: 42 }
+(deftype Box (Value {:x Number})) (Value {:x 42})
 ---
 { __tag: "Value", x: 42 }
 ===
-type Option<A> = None | Some { value: A }; None
+(deftype Option [A] None (Some {:value A})) None
 ---
 { __tag: "None" }
 ===
-type Option<A> = None | Some { value: A }; Some { value: 42 }
+(deftype Option [A] None (Some {:value A})) (Some {:value 42})
 ---
 { __tag: "Some", value: 42 }
 ===
-type Bool = True | False; match(True) { case True => 1; case False => 0 }
+(deftype Bool True False) (match True [True 1] [False 0])
 ---
 (() => { const __match = { __tag: "True" }; if (__match.__tag === "True") { return 1; } else if (__match.__tag === "False") { return 0; } return undefined; })()
 ===
-type Option<A> = None | Some { value: A }; let x = Some { value: 10 }; match(x) { case None => 0; case Some { value: v } => v }
+(deftype Option [A] None (Some {:value A})) (let [x (Some {:value 10})] (match x [None 0] [(Some {:value v}) v]))
 ---
-let x = { __tag: "Some", value: 10 };
-(() => { const __match = x; if (__match.__tag === "None") { return 0; } else if (__match.__tag === "Some") { const v = __match.value; return v; } return undefined; })()
+(() => { let x = { __tag: "Some", value: 10 }; return (() => { const __match = x; if (__match.__tag === "None") { return 0; } else if (__match.__tag === "Some") { const v = __match.value; return v; } return undefined; })(); })()
 ===
-type Pair = MkPair { fst: Number, snd: Number }; let p = MkPair { fst: 1, snd: 2 }; match(p) { case MkPair { fst: x, snd: y } => x + y }
+(deftype Pair (MkPair {:fst Number :snd Number})) (let [p (MkPair {:fst 1 :snd 2})] (match p [(MkPair {:fst x :snd y}) (+ x y)]))
 ---
-let p = { __tag: "MkPair", fst: 1, snd: 2 };
-(() => { const __match = p; if (__match.__tag === "MkPair") { const x = __match.fst; const y = __match.snd; return x + y; } return undefined; })()
+(() => { let p = { __tag: "MkPair", fst: 1, snd: 2 }; return (() => { const __match = p; if (__match.__tag === "MkPair") { const x = __match.fst; const y = __match.snd; return x + y; } return undefined; })(); })()

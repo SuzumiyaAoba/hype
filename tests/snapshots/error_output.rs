@@ -9,8 +9,8 @@ fn snap_err(src: &str) -> String {
 fn error_outputs() {
     let cases = [
         "x",
-        "fn f(a: Number): Number = a; f(true)",
-        "1 + true",
+        "(defn f [a: Number] -> Number a) (f true)",
+        "(+ 1 true)",
     ];
 
     let mut out = String::new();

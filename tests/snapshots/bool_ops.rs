@@ -5,14 +5,14 @@ fn bool_and_comparison() {
     let cases = [
         "true",
         "false",
-        "true && false",
-        "true || false && true",
-        "false && true || true",
-        "true && true || false",
-        "1 < 2",
-        "1 <= 2 == true",
-        "1 + 2 == 3",
-        "fn eq(a: Number, b: Number): Bool = a == b;\neq(1, 1)",
+        "(and true false)",
+        "(or true (and false true))",
+        "(or (and false true) true)",
+        "(or (and true true) false)",
+        "(< 1 2)",
+        "(== (<= 1 2) true)",
+        "(== (+ 1 2) 3)",
+        "(defn eq [a: Number b: Number] -> Bool (== a b)) (eq 1 1)",
     ];
 
     let mut out = String::new();
