@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/tco.rs
+expression: js
+---
+function sum_to(n, acc) { while (true) { const __match = n == 0; if (__match === true) { return acc; } else if (__match === false) { [n, acc] = [n - 1, acc + n]; continue; } return undefined; } }
+sum_to(10, 0)

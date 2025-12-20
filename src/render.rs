@@ -1,6 +1,14 @@
 use crate::ast::{BinOp, Expr, ExprKind, MatchArm, Stmt, Type};
 use crate::typecheck::type_name;
 
+/// Context for TCO transformation
+struct TcoContext {
+    /// The name of the function being optimized
+    fn_name: String,
+    /// Parameter names for reassignment
+    params: Vec<String>,
+}
+
 pub fn binop_precedence(op: &BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -41,12 +49,28 @@ pub fn render_program(stmts: &[Stmt]) -> String {
                 lines.push(format!("let {name} = {js};"));
             }
             Stmt::Fn { name, params, body, .. } => {
-                let js_body = render_js(body, 0);
                 let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
-                lines.push(format!(
-                    "function {name}({}) {{ return {js_body}; }}",
-                    param_list.join(", ")
-                ));
+
+                // Check if this function is tail-recursive
+                if is_tail_recursive(name, body) {
+                    // Render with TCO optimization
+                    let tco_ctx = TcoContext {
+                        fn_name: name.clone(),
+                        params: param_list.clone(),
+                    };
+                    let tco_body = render_tco_body(body, &tco_ctx);
+                    lines.push(format!(
+                        "function {name}({}) {{ while (true) {{ {} }} }}",
+                        param_list.join(", "),
+                        tco_body
+                    ));
+                } else {
+                    let js_body = render_js(body, 0);
+                    lines.push(format!(
+                        "function {name}({}) {{ return {js_body}; }}",
+                        param_list.join(", ")
+                    ));
+                }
             }
             Stmt::External { name, js_name, .. } => {
                 lines.push(format!("const {name} = {js_name};"));
@@ -453,4 +477,297 @@ fn escape_js_str(s: &str) -> String {
             other => vec![other],
         })
         .collect()
+}
+
+// ============================================================================
+// Tail Call Optimization (TCO)
+// ============================================================================
+
+/// Check if a function is tail-recursive (has self-recursive calls only in tail position)
+fn is_tail_recursive(fn_name: &str, body: &Expr) -> bool {
+    // First check if there are any self-recursive calls at all
+    if !has_self_call(fn_name, body) {
+        return false;
+    }
+
+    // Check that ALL self-calls are in tail position
+    all_self_calls_in_tail_position(fn_name, body, true)
+}
+
+/// Check if the expression contains any call to the given function
+fn has_self_call(fn_name: &str, expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            if let ExprKind::Var { name } = &callee.kind {
+                if name == fn_name {
+                    return true;
+                }
+            }
+            has_self_call(fn_name, callee) || args.iter().any(|a| has_self_call(fn_name, a))
+        }
+        ExprKind::Match { expr, arms } => {
+            has_self_call(fn_name, expr)
+                || arms.iter().any(|arm| {
+                    has_self_call(fn_name, &arm.expr)
+                        || arm.guard.as_ref().map_or(false, |g| has_self_call(fn_name, g))
+                })
+        }
+        ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
+            Stmt::Expr(e) => has_self_call(fn_name, e),
+            Stmt::Let { expr, .. } => has_self_call(fn_name, expr),
+            Stmt::Fn { body, .. } => has_self_call(fn_name, body),
+            _ => false,
+        }),
+        ExprKind::Binary { left, right, .. } => {
+            has_self_call(fn_name, left) || has_self_call(fn_name, right)
+        }
+        ExprKind::Lambda { body, .. } => has_self_call(fn_name, body),
+        ExprKind::Tuple(items) | ExprKind::List(items) => {
+            items.iter().any(|e| has_self_call(fn_name, e))
+        }
+        ExprKind::Constructor { fields, .. } | ExprKind::Record(fields) => {
+            fields.iter().any(|(_, e)| has_self_call(fn_name, e))
+        }
+        ExprKind::FieldAccess { expr, .. } => has_self_call(fn_name, expr),
+        ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Var { .. } => false,
+    }
+}
+
+/// Check that all self-calls are in tail position
+/// `in_tail` indicates whether the current expression is in tail position
+fn all_self_calls_in_tail_position(fn_name: &str, expr: &Expr, in_tail: bool) -> bool {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            // Check if this is a self-call
+            if let ExprKind::Var { name } = &callee.kind {
+                if name == fn_name {
+                    // Self-call must be in tail position
+                    if !in_tail {
+                        return false;
+                    }
+                    // Arguments must not contain self-calls
+                    return args.iter().all(|a| !has_self_call(fn_name, a));
+                }
+            }
+            // Non-self calls: check callee and args (not in tail position)
+            all_self_calls_in_tail_position(fn_name, callee, false)
+                && args
+                    .iter()
+                    .all(|a| all_self_calls_in_tail_position(fn_name, a, false))
+        }
+        ExprKind::Match { expr: scrutinee, arms } => {
+            // Scrutinee is not in tail position
+            if !all_self_calls_in_tail_position(fn_name, scrutinee, false) {
+                return false;
+            }
+            // Each arm body inherits the tail position
+            arms.iter().all(|arm| {
+                // Guard is not in tail position
+                if let Some(guard) = &arm.guard {
+                    if !all_self_calls_in_tail_position(fn_name, guard, false) {
+                        return false;
+                    }
+                }
+                all_self_calls_in_tail_position(fn_name, &arm.expr, in_tail)
+            })
+        }
+        ExprKind::Block(stmts) => {
+            // Only the last expression is in tail position
+            for (i, stmt) in stmts.iter().enumerate() {
+                let is_last = i == stmts.len() - 1;
+                match stmt {
+                    Stmt::Expr(e) => {
+                        if !all_self_calls_in_tail_position(fn_name, e, is_last && in_tail) {
+                            return false;
+                        }
+                    }
+                    Stmt::Let { expr, .. } => {
+                        if !all_self_calls_in_tail_position(fn_name, expr, false) {
+                            return false;
+                        }
+                    }
+                    Stmt::Fn { body, .. } => {
+                        // Nested function definitions: self-calls here refer to the outer fn
+                        // They're not in tail position of the outer function
+                        if has_self_call(fn_name, body) {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            true
+        }
+        ExprKind::Binary { left, right, .. } => {
+            // Operands are not in tail position
+            all_self_calls_in_tail_position(fn_name, left, false)
+                && all_self_calls_in_tail_position(fn_name, right, false)
+        }
+        ExprKind::Lambda { body, .. } => {
+            // Lambda body: self-calls refer to outer function, not in tail position
+            !has_self_call(fn_name, body)
+        }
+        ExprKind::Tuple(items) | ExprKind::List(items) => items
+            .iter()
+            .all(|e| all_self_calls_in_tail_position(fn_name, e, false)),
+        ExprKind::Constructor { fields, .. } | ExprKind::Record(fields) => fields
+            .iter()
+            .all(|(_, e)| all_self_calls_in_tail_position(fn_name, e, false)),
+        ExprKind::FieldAccess { expr, .. } => {
+            all_self_calls_in_tail_position(fn_name, expr, false)
+        }
+        ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Var { .. } => true,
+    }
+}
+
+/// Render the body of a tail-recursive function with TCO
+fn render_tco_body(expr: &Expr, ctx: &TcoContext) -> String {
+    render_tco_expr(expr, ctx, true)
+}
+
+/// Render an expression with TCO transformation
+/// `in_tail` indicates whether the current expression is in tail position
+fn render_tco_expr(expr: &Expr, ctx: &TcoContext, in_tail: bool) -> String {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            // Check if this is a tail-recursive self-call
+            if in_tail {
+                if let ExprKind::Var { name } = &callee.kind {
+                    if name == &ctx.fn_name {
+                        // Transform tail call to parameter reassignment + continue
+                        let rendered_args: Vec<String> =
+                            args.iter().map(|a| render_js(a, 0)).collect();
+
+                        if ctx.params.len() == 1 {
+                            // Single parameter: simple assignment
+                            return format!(
+                                "{} = {}; continue;",
+                                ctx.params[0], rendered_args[0]
+                            );
+                        } else {
+                            // Multiple parameters: use destructuring to avoid order issues
+                            return format!(
+                                "[{}] = [{}]; continue;",
+                                ctx.params.join(", "),
+                                rendered_args.join(", ")
+                            );
+                        }
+                    }
+                }
+            }
+            // Non-tail call or not a self-call
+            let js = render_js(expr, 0);
+            if in_tail {
+                format!("return {};", js)
+            } else {
+                js
+            }
+        }
+        ExprKind::Match { expr: scrutinee, arms } => {
+            render_tco_match(scrutinee, arms, ctx, in_tail)
+        }
+        ExprKind::Block(stmts) => render_tco_block(stmts, ctx, in_tail),
+        _ => {
+            // For other expressions, just render normally
+            let js = render_js(expr, 0);
+            if in_tail {
+                format!("return {};", js)
+            } else {
+                js
+            }
+        }
+    }
+}
+
+/// Render a match expression with TCO
+fn render_tco_match(scrutinee: &Expr, arms: &[MatchArm], ctx: &TcoContext, in_tail: bool) -> String {
+    let scrutinee_js = render_js(scrutinee, 0);
+    let mut parts = Vec::new();
+    parts.push(format!("const __match = {};", scrutinee_js));
+
+    for (i, arm) in arms.iter().enumerate() {
+        let pat_cond = render_pattern_condition("__match", &arm.pat);
+        let bindings = pattern_bindings("__match", &arm.pat);
+        let decls: Vec<String> = bindings
+            .iter()
+            .map(|(n, e)| format!("const {n} = {e};"))
+            .collect();
+        let binds_js = if decls.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", decls.join(" "))
+        };
+
+        // Render body with TCO
+        let body_js = render_tco_expr(&arm.expr, ctx, in_tail);
+
+        // Handle guard
+        let body_with_guard = if let Some(guard) = &arm.guard {
+            let guard_js = render_js(guard, 0);
+            format!("if ({guard_js}) {{ {body_js} }}")
+        } else {
+            body_js
+        };
+
+        if i == 0 {
+            parts.push(format!("if ({pat_cond}) {{ {binds_js}{body_with_guard} }}"));
+        } else {
+            parts.push(format!(
+                "else if ({pat_cond}) {{ {binds_js}{body_with_guard} }}"
+            ));
+        }
+    }
+
+    if in_tail {
+        parts.push("return undefined;".to_string());
+    }
+
+    parts.join(" ")
+}
+
+/// Render a block with TCO
+fn render_tco_block(stmts: &[Stmt], ctx: &TcoContext, in_tail: bool) -> String {
+    let mut parts = Vec::new();
+
+    for (i, stmt) in stmts.iter().enumerate() {
+        let is_last = i == stmts.len() - 1;
+
+        match stmt {
+            Stmt::Let { name, expr, .. } => {
+                let js = render_js(expr, 0);
+                parts.push(format!("let {name} = {js};"));
+            }
+            Stmt::Expr(e) => {
+                if is_last && in_tail {
+                    parts.push(render_tco_expr(e, ctx, true));
+                } else {
+                    let js = render_js(e, 0);
+                    if !is_last {
+                        parts.push(format!("{js};"));
+                    } else {
+                        parts.push(js);
+                    }
+                }
+            }
+            Stmt::Fn {
+                name,
+                params,
+                body,
+                ..
+            } => {
+                let js_body = render_js(body, 0);
+                let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
+                parts.push(format!(
+                    "function {name}({}) {{ return {js_body}; }}",
+                    param_list.join(", ")
+                ));
+            }
+            Stmt::External { name, js_name, .. } => {
+                parts.push(format!("const {name} = {js_name};"));
+            }
+            Stmt::Import { .. } | Stmt::TypeDecl { .. } => {}
+        }
+    }
+
+    parts.join(" ")
 }

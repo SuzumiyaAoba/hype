@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/tco.rs
+expression: js
+---
+function add_then_recurse(n) { return (() => { const __match = n == 0; if (__match === true) { return 0; } else if (__match === false) { return 1 + add_then_recurse(n - 1); } return undefined; })(); }
+add_then_recurse(5)

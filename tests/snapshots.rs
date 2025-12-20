@@ -27,3 +27,6 @@ mod match_guards;
 
 #[path = "snapshots/records.rs"]
 mod records;
+
+#[path = "snapshots/tco.rs"]
+mod tco;
