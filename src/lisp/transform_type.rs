@@ -98,6 +98,20 @@ pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
             }
         }
 
+        // Record type: {:x Number :y String}
+        Sexp::Map(pairs) => {
+            let mut fields = Vec::new();
+            for (key, value) in pairs {
+                let field_name = match key {
+                    Sexp::Symbol(n) => n.clone(),
+                    _ => return Err("Record field name must be a symbol".to_string()),
+                };
+                let field_type = parse_type(value)?;
+                fields.push((field_name, field_type));
+            }
+            Ok(Type::Record(fields))
+        }
+
         _ => Err(format!("Invalid type: {:?}", sexp)),
     }
 }

@@ -1,0 +1,5 @@
+---
+source: tests/snapshots/records.rs
+expression: js
+---
+(() => { let person = { name: "Bob", age: 25 }; return (() => { const __match = person; if (typeof __match === "object") { const n = __match.name; const a = __match.age; return n; } return undefined; })(); })()

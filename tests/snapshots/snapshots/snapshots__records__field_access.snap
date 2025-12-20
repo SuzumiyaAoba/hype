@@ -1,0 +1,5 @@
+---
+source: tests/snapshots/records.rs
+expression: js
+---
+(() => { let point = { x: 10, y: 20 }; return point.x + point.y; })()

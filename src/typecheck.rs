@@ -44,6 +44,13 @@ pub fn type_name(t: &Type) -> String {
                 format!("{}<{}>", name, args_str.join(", "))
             }
         }
+        Type::Record(fields) => {
+            let fields_str: Vec<String> = fields
+                .iter()
+                .map(|(name, ty)| format!("{}: {}", name, type_name(ty)))
+                .collect();
+            format!("{{ {} }}", fields_str.join(", "))
+        }
     }
 }
 
@@ -65,6 +72,9 @@ impl Subst {
                 name: name.clone(),
                 args: args.iter().map(|a| self.apply(a)).collect(),
             },
+            Type::Record(fields) => Type::Record(
+                fields.iter().map(|(n, t)| (n.clone(), self.apply(t))).collect()
+            ),
             other => other.clone(),
         }
     }
@@ -102,6 +112,11 @@ fn free_type_vars(t: &Type, acc: &mut HashSet<TypeVarId>) {
         Type::Adt { args, .. } => {
             for arg in args {
                 free_type_vars(arg, acc);
+            }
+        }
+        Type::Record(fields) => {
+            for (_, ty) in fields {
+                free_type_vars(ty, acc);
             }
         }
         _ => {}
@@ -512,6 +527,45 @@ fn infer_expr(
             };
             Ok((result_ty, s))
         }
+        ExprKind::Record(fields) => {
+            let mut s = Subst::new();
+            let mut field_types = Vec::new();
+            for (field_name, field_expr) in fields {
+                let (ty, field_s) = infer_expr(field_expr, &apply_env(env, &s), state, source)?;
+                s = s.compose(&field_s);
+                field_types.push((field_name.clone(), s.apply(&ty)));
+            }
+            Ok((Type::Record(field_types), s))
+        }
+        ExprKind::FieldAccess { expr: record_expr, field } => {
+            let (record_ty, s) = infer_expr(record_expr, env, state, source)?;
+            let record_ty = s.apply(&record_ty);
+
+            // Try to find the field in the record type
+            match &record_ty {
+                Type::Record(fields) => {
+                    if let Some((_, field_ty)) = fields.iter().find(|(n, _)| n == field) {
+                        Ok((field_ty.clone(), s))
+                    } else {
+                        Err(ParseError {
+                            message: format!("no field `{}` in record type", field),
+                            span: expr.span.clone(),
+                            source: source.to_string(),
+                        })
+                    }
+                }
+                Type::Var(_) => {
+                    // Unknown record type, create a fresh type variable for the field
+                    let field_ty = state.fresh_var();
+                    Ok((field_ty, s))
+                }
+                _ => Err(ParseError {
+                    message: format!("cannot access field `{}` on non-record type", field),
+                    span: expr.span.clone(),
+                    source: source.to_string(),
+                }),
+            }
+        }
     }
 }
 
@@ -837,6 +891,16 @@ fn pattern_info(pat: &Pattern, env: &TypeEnv, state: &mut InferState) -> (Type, 
                 (state.fresh_var(), binds)
             }
         }
+        Pattern::Record { fields } => {
+            let mut binds = Vec::new();
+            let mut field_types = Vec::new();
+            for (field_name, field_pat) in fields {
+                let (ty, field_binds) = pattern_info(field_pat, env, state);
+                binds.extend(field_binds);
+                field_types.push((field_name.clone(), ty));
+            }
+            (Type::Record(field_types), binds)
+        }
     }
 }
 
@@ -910,6 +974,28 @@ fn unify(a: &Type, b: &Type, span: &Range<usize>, source: &str) -> Result<Subst,
         (Type::Number, Type::Number) => Ok(Subst::new()),
         (Type::String, Type::String) => Ok(Subst::new()),
         (Type::Bool, Type::Bool) => Ok(Subst::new()),
+        (Type::Record(fa), Type::Record(fb)) => {
+            if fa.len() != fb.len() {
+                return Err(ParseError {
+                    message: "record field count mismatch".into(),
+                    span: span.clone(),
+                    source: source.to_string(),
+                });
+            }
+            let mut subst = Subst::new();
+            for ((na, ta), (nb, tb)) in fa.iter().zip(fb.iter()) {
+                if na != nb {
+                    return Err(ParseError {
+                        message: format!("record field name mismatch: {} vs {}", na, nb),
+                        span: span.clone(),
+                        source: source.to_string(),
+                    });
+                }
+                let su = unify(&subst.apply(ta), &subst.apply(tb), span, source)?;
+                subst = subst.compose(&su);
+            }
+            Ok(subst)
+        }
         _ => Err(ParseError {
             message: format!("type mismatch: {:?} vs {:?}", a, b),
             span: span.clone(),
@@ -943,6 +1029,7 @@ fn occurs(var: &TypeVarId, t: &Type) -> bool {
         Type::List(inner) => occurs(var, inner),
         Type::Fun(ps, r) => ps.iter().any(|p| occurs(var, p)) || occurs(var, r),
         Type::Adt { args, .. } => args.iter().any(|a| occurs(var, a)),
+        Type::Record(fields) => fields.iter().any(|(_, ty)| occurs(var, ty)),
         _ => false,
     }
 }

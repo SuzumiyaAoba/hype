@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/records.rs
+expression: js
+---
+function get_x(p) { return p.x; }
+get_x({ x: 42, y: 0 })

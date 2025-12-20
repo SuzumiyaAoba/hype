@@ -1,0 +1,5 @@
+---
+source: tests/snapshots/records.rs
+expression: js
+---
+(() => { let data = { inner: { value: 100 } }; return data.inner.value; })()
