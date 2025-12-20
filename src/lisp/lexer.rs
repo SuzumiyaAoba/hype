@@ -19,6 +19,7 @@ pub enum Token {
 
     // Symbols and keywords
     Symbol(String),
+    Keyword(String), // :keyword
 
     // Special characters
     Colon,      // :
@@ -207,7 +208,13 @@ impl Lexer {
             // HTML tags will use a different syntax in the future
             Some(':') => {
                 self.advance();
-                Token::Colon
+                // Check if it's a keyword like :when
+                if self.current().map_or(false, |ch| ch.is_alphabetic() || ch == '_') {
+                    let sym = self.read_symbol();
+                    Token::Keyword(sym)
+                } else {
+                    Token::Colon
+                }
             }
             Some('&') => {
                 self.advance();

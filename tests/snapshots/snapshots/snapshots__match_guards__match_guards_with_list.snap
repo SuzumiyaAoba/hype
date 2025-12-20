@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/match_guards.rs
+expression: js
+---
+function sum_big(xs) { return (() => { const __match = xs; if (Array.isArray(__match) && __match.length === 0) { return 0; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const h = __match[0]; const t = __match.slice(1); if (h > 5) { return h + sum_big(t); } } else if (Array.isArray(__match) && __match.length >= 1 && true) { const t = __match.slice(1); return sum_big(t); } return undefined; })(); }
+sum_big([1, 2, 10, 3, 20])

@@ -220,6 +220,9 @@ impl Transformer {
             Sexp::Ellipsis => {
                 return Err("Ellipsis (...) is not a valid expression".to_string());
             }
+            Sexp::Keyword(kw) => {
+                return Err(format!("Keyword :{} is not a valid expression", kw));
+            }
         };
 
         Ok(Expr { kind, span })
@@ -654,7 +657,7 @@ impl Transformer {
     }
 
     fn transform_match(&mut self, items: &[Sexp]) -> Result<ExprKind, String> {
-        // (match expr [pat1 body1] [pat2 body2] ...)
+        // (match expr [pat1 body1] [pat2 :when guard2 body2] ...)
         if items.is_empty() {
             return Err("match requires an expression and at least one arm".to_string());
         }
@@ -665,12 +668,8 @@ impl Transformer {
         for arm_sexp in &items[1..] {
             match arm_sexp {
                 Sexp::Vector(arm_items) | Sexp::Tuple(arm_items) => {
-                    if arm_items.len() != 2 {
-                        return Err("match arm must have exactly 2 elements: [pattern body]".to_string());
-                    }
-                    let pat = self.parse_pattern(&arm_items[0])?;
-                    let body = self.transform_expr(arm_items[1].clone())?;
-                    arms.push(MatchArm { pat, expr: body });
+                    let arm = self.parse_match_arm(arm_items)?;
+                    arms.push(arm);
                 }
                 _ => return Err("match arm must be a vector [pattern body]".to_string()),
             }
@@ -681,6 +680,33 @@ impl Transformer {
         }
 
         Ok(ExprKind::Match { expr, arms })
+    }
+
+    fn parse_match_arm(&mut self, items: &[Sexp]) -> Result<MatchArm, String> {
+        // [pattern body] or [pattern :when guard body]
+        match items.len() {
+            2 => {
+                // No guard: [pattern body]
+                let pat = self.parse_pattern(&items[0])?;
+                let body = self.transform_expr(items[1].clone())?;
+                Ok(MatchArm { pat, guard: None, expr: body })
+            }
+            4 => {
+                // With guard: [pattern :when guard body]
+                let pat = self.parse_pattern(&items[0])?;
+
+                // Check for :when keyword
+                match &items[1] {
+                    Sexp::Keyword(kw) if kw == "when" => {}
+                    _ => return Err("expected :when keyword in guarded match arm".to_string()),
+                }
+
+                let guard = self.transform_expr(items[2].clone())?;
+                let body = self.transform_expr(items[3].clone())?;
+                Ok(MatchArm { pat, guard: Some(guard), expr: body })
+            }
+            _ => Err("match arm must be [pattern body] or [pattern :when guard body]".to_string()),
+        }
     }
 
     fn transform_if(&mut self, items: &[Sexp]) -> Result<ExprKind, String> {
@@ -699,10 +725,12 @@ impl Transformer {
             arms: vec![
                 MatchArm {
                     pat: Pattern::Bool(true),
+                    guard: None,
                     expr: then_branch,
                 },
                 MatchArm {
                     pat: Pattern::Bool(false),
+                    guard: None,
                     expr: else_branch,
                 },
             ],

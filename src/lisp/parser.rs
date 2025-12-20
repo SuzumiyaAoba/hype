@@ -5,6 +5,7 @@ use super::lexer::{Lexer, Token, TokenSpan};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Sexp {
     Symbol(String),
+    Keyword(String),                // :keyword
     Number(f64),
     String(String),
     Bool(bool),
@@ -92,6 +93,10 @@ impl Parser {
                 self.advance();
                 Sexp::Symbol(s)
             }
+            Token::Keyword(s) => {
+                self.advance();
+                Sexp::Keyword(s)
+            }
             Token::Colon => {
                 self.advance();
                 Sexp::Colon
@@ -167,24 +172,31 @@ impl Parser {
         let mut pairs = Vec::new();
 
         while !matches!(self.current(), Token::RBrace | Token::Eof) {
-            // Handle :keyword style keys
-            let key = if matches!(self.current(), Token::Colon) {
-                self.advance(); // skip colon
-                // Next should be a symbol which becomes the key
-                match self.current().clone() {
-                    Token::Symbol(s) => {
-                        self.advance();
-                        Sexp::Symbol(s)
-                    }
-                    _ => return Err("Expected symbol after : in map key".to_string()),
-                }
-            } else {
-                let key = self.parse_sexp()?.sexp;
-                // Handle optional colon after key (key: value style)
-                if matches!(self.current(), Token::Colon) {
+            // Handle :keyword style keys (now tokenized as Token::Keyword)
+            let key = match self.current().clone() {
+                Token::Keyword(s) => {
                     self.advance();
+                    Sexp::Symbol(s) // Convert keyword to symbol for map key
                 }
-                key
+                Token::Colon => {
+                    self.advance(); // skip colon
+                    // Next should be a symbol which becomes the key
+                    match self.current().clone() {
+                        Token::Symbol(s) => {
+                            self.advance();
+                            Sexp::Symbol(s)
+                        }
+                        _ => return Err("Expected symbol after : in map key".to_string()),
+                    }
+                }
+                _ => {
+                    let key = self.parse_sexp()?.sexp;
+                    // Handle optional colon after key (key: value style)
+                    if matches!(self.current(), Token::Colon) {
+                        self.advance();
+                    }
+                    key
+                }
             };
 
             let value = self.parse_sexp()?.sexp;
