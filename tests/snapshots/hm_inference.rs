@@ -12,7 +12,10 @@ fn transformations() {
             "higher_order_apply",
             "(defn apply [f x] (f x)) (defn inc [n] (+ n 1)) (apply inc 41)",
         ),
-        ("polymorphic_predicate", "(defn eq [x y] (== x y)) (eq 1 1) (eq \"a\" \"b\")"),
+        (
+            "polymorphic_predicate",
+            "(defn eq [x y] (== x y)) (eq 1 1) (eq \"a\" \"b\")",
+        ),
         (
             "recursive_fact",
             "(defn fact [n] (match n [0 1] [_ (* n (fact (- n 1)))])) (fact 5)",
@@ -48,14 +51,8 @@ fn transformations() {
             "(match [1, true] [[1, true] 0] [_ 1])",
         ),
         ("list_literal", "[1 2 3]"),
-        (
-            "list_cons_match",
-            "(match [1 2] [[h ...t] h] [_ 0])",
-        ),
-        (
-            "list_rest_ignored",
-            "(match [1 2] [[h ...] h] [_ 0])",
-        ),
+        ("list_cons_match", "(match [1 2] [[h ...t] h] [_ 0])"),
+        ("list_rest_ignored", "(match [1 2] [[h ...] h] [_ 0])"),
         (
             "fix_factorial",
             "(let [fact (fix (fn [rec] (fn [n] (match n [0 1] [_ (* n (rec (- n 1)))]))))] (fact 4))",

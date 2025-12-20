@@ -31,7 +31,11 @@ pub(crate) fn log_debug<F: FnOnce() -> String>(debug: Option<&mut DebugInfo>, f:
     }
 }
 
-pub(crate) fn annotate_if_requested(stmts: &[crate::ast::Stmt], env: &TypeEnv, debug: Option<&mut DebugInfo>) {
+pub(crate) fn annotate_if_requested(
+    stmts: &[crate::ast::Stmt],
+    env: &TypeEnv,
+    debug: Option<&mut DebugInfo>,
+) {
     if let Some(d) = debug {
         d.annotated_source = Some(render_annotated_program(stmts, env));
     }

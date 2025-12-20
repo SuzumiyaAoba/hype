@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub use ast::{BinOp, Expr, ExprKind, FnSig, MatchArm, Pattern, Stmt, Type};
-pub use debug::{render_debug_text, DebugInfo};
-pub use error::{format_error, ParseError};
+pub use debug::{DebugInfo, render_debug_text};
+pub use error::{ParseError, format_error};
 pub use lisp_transpile::parse_lisp;
 pub use render::render_program;
 
