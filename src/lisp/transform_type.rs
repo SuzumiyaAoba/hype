@@ -1,5 +1,5 @@
-use crate::ast::Type;
 use super::parser::Sexp;
+use crate::ast::Type;
 
 pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
     match sexp {
@@ -26,16 +26,15 @@ pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
         // Arrow-based function type: (-> A B C) means A -> B -> C
         Sexp::List(items) if !items.is_empty() && matches!(&items[0], Sexp::Arrow) => {
             if items.len() < 3 {
-                return Err("Arrow function type requires at least input and output types".to_string());
+                return Err(
+                    "Arrow function type requires at least input and output types".to_string(),
+                );
             }
             // (-> A B) means A -> B
             // (-> A B C) means (A, B) -> C
             let last_idx = items.len() - 1;
             let ret = parse_type(&items[last_idx])?;
-            let params: Result<Vec<_>, _> = items[1..last_idx]
-                .iter()
-                .map(parse_type)
-                .collect();
+            let params: Result<Vec<_>, _> = items[1..last_idx].iter().map(parse_type).collect();
             Ok(Type::Fun(params?, Box::new(ret)))
         }
 
@@ -50,23 +49,23 @@ pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
                     Ok(Type::List(Box::new(elem_type)))
                 }
                 Sexp::Symbol(name) if name == "Tuple" => {
-                    let elem_types: Result<Vec<_>, _> = items[1..]
-                        .iter()
-                        .map(parse_type)
-                        .collect();
+                    let elem_types: Result<Vec<_>, _> = items[1..].iter().map(parse_type).collect();
                     Ok(Type::Tuple(elem_types?))
                 }
                 Sexp::Symbol(name) if name == "fn" => {
                     // Function type: (fn [Number String] -> Bool)
                     if items.len() < 3 {
-                        return Err("Function type requires parameter types and return type".to_string());
+                        return Err(
+                            "Function type requires parameter types and return type".to_string()
+                        );
                     }
 
                     // Parse parameter types
                     let params = match &items[1] {
-                        Sexp::Vector(params) => {
-                            params.iter().map(parse_type).collect::<Result<Vec<_>, _>>()?
-                        }
+                        Sexp::Vector(params) => params
+                            .iter()
+                            .map(parse_type)
+                            .collect::<Result<Vec<_>, _>>()?,
                         _ => return Err("Function type parameters must be in a vector".to_string()),
                     };
 
@@ -85,10 +84,7 @@ pub fn parse_type(sexp: &Sexp) -> Result<Type, String> {
                 }
                 Sexp::Symbol(name) => {
                     // ADT type: (Option String)
-                    let args: Result<Vec<_>, _> = items[1..]
-                        .iter()
-                        .map(parse_type)
-                        .collect();
+                    let args: Result<Vec<_>, _> = items[1..].iter().map(parse_type).collect();
                     Ok(Type::Adt {
                         name: name.clone(),
                         args: args?,
@@ -122,9 +118,18 @@ mod tests {
 
     #[test]
     fn test_parse_simple_types() {
-        assert_eq!(parse_type(&Sexp::Symbol("Number".to_string())).unwrap(), Type::Number);
-        assert_eq!(parse_type(&Sexp::Symbol("String".to_string())).unwrap(), Type::String);
-        assert_eq!(parse_type(&Sexp::Symbol("Bool".to_string())).unwrap(), Type::Bool);
+        assert_eq!(
+            parse_type(&Sexp::Symbol("Number".to_string())).unwrap(),
+            Type::Number
+        );
+        assert_eq!(
+            parse_type(&Sexp::Symbol("String".to_string())).unwrap(),
+            Type::String
+        );
+        assert_eq!(
+            parse_type(&Sexp::Symbol("Bool".to_string())).unwrap(),
+            Type::Bool
+        );
     }
 
     #[test]

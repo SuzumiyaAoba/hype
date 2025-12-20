@@ -48,7 +48,9 @@ pub fn render_program(stmts: &[Stmt]) -> String {
                 let js = render_js(expr, 0);
                 lines.push(format!("let {name} = {js};"));
             }
-            Stmt::Fn { name, params, body, .. } => {
+            Stmt::Fn {
+                name, params, body, ..
+            } => {
                 let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
 
                 // Check if this function is tail-recursive
@@ -98,9 +100,7 @@ const FIX_JS: &str = "function fix(f) { return (function(x) { return f(function(
 
 pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
     match &expr.kind {
-        ExprKind::Number(n) => {
-            render_number_literal(*n)
-        }
+        ExprKind::Number(n) => render_number_literal(*n),
         ExprKind::Bool(b) => format!("{b}"),
         ExprKind::Str(s) => format!("\"{}\"", escape_js_str(s)),
         ExprKind::Tuple(items) => {
@@ -120,7 +120,10 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
         ExprKind::Lambda { params, body } => {
             let params_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
             let body_js = render_js(body, 0);
-            format!("(function({}) {{ return {body_js}; }})", params_list.join(", "))
+            format!(
+                "(function({}) {{ return {body_js}; }})",
+                params_list.join(", ")
+            )
         }
         ExprKind::Block(stmts) => render_block(stmts),
         ExprKind::Match { expr, arms } => render_match(expr, arms),
@@ -173,7 +176,12 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
                 let js = render_js(expr, 0);
                 lines.push(format!("let {name}: {} = {js};", type_name(t)));
             }
-            Stmt::Fn { name, params, ret, body } => {
+            Stmt::Fn {
+                name,
+                params,
+                ret,
+                body,
+            } => {
                 let ret_ty = ret
                     .as_ref()
                     .or_else(|| env.schemes.get(name).map(|s| &s.ty))
@@ -196,12 +204,19 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
                 ));
             }
             Stmt::External { name, ty, js_name } => {
-                lines.push(format!("external {name}: {} = \"{js_name}\";", type_name(ty)));
+                lines.push(format!(
+                    "external {name}: {} = \"{js_name}\";",
+                    type_name(ty)
+                ));
             }
             Stmt::Import { path } => {
                 lines.push(format!("import \"{path}\";"));
             }
-            Stmt::TypeDecl { name, params, variants } => {
+            Stmt::TypeDecl {
+                name,
+                params,
+                variants,
+            } => {
                 let params_str = if params.is_empty() {
                     String::new()
                 } else {
@@ -222,7 +237,12 @@ pub fn render_annotated_program(stmts: &[Stmt], env: &crate::typecheck::TypeEnv)
                         }
                     })
                     .collect();
-                lines.push(format!("type {}{} = {};", name, params_str, variants_str.join(" | ")));
+                lines.push(format!(
+                    "type {}{} = {};",
+                    name,
+                    params_str,
+                    variants_str.join(" | ")
+                ));
             }
             Stmt::Expr(expr) => {
                 let js = render_js(expr, 0);
@@ -249,7 +269,10 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
         crate::ast::Pattern::Number(n) => format!("{var} === {}", render_number_literal(*n)),
         crate::ast::Pattern::Str(s) => format!("{var} === \"{}\"", escape_js_str(s)),
         crate::ast::Pattern::Tuple(items) => {
-            let mut conds = vec![format!("Array.isArray({var})"), format!("{var}.length === {}", items.len())];
+            let mut conds = vec![
+                format!("Array.isArray({var})"),
+                format!("{var}.length === {}", items.len()),
+            ];
             for (i, pat) in items.iter().enumerate() {
                 let inner_var = format!("{var}[{i}]");
                 conds.push(render_pattern_condition(&inner_var, pat));
@@ -386,7 +409,9 @@ fn expr_uses_fix(expr: &Expr) -> bool {
             Stmt::Fn { body, .. } => expr_uses_fix(body),
             Stmt::External { .. } | Stmt::Import { .. } | Stmt::TypeDecl { .. } => false,
         }),
-        ExprKind::Match { expr, arms } => expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr)),
+        ExprKind::Match { expr, arms } => {
+            expr_uses_fix(expr) || arms.iter().any(|a| expr_uses_fix(&a.expr))
+        }
         ExprKind::Binary { left, right, .. } => expr_uses_fix(left) || expr_uses_fix(right),
         ExprKind::Tuple(items) | ExprKind::List(items) => items.iter().any(expr_uses_fix),
         ExprKind::Lambda { body, .. } => expr_uses_fix(body),
@@ -413,10 +438,15 @@ fn render_block(stmts: &[Stmt]) -> String {
                 let js = render_js(expr, 0);
                 parts.push(format!("{js};"));
             }
-            Stmt::Fn { name, params, body, .. } => {
+            Stmt::Fn {
+                name, params, body, ..
+            } => {
                 let js_body = render_js(body, 0);
                 let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
-                parts.push(format!("function {name}({}) {{ return {js_body}; }}", param_list.join(", ")));
+                parts.push(format!(
+                    "function {name}({}) {{ return {js_body}; }}",
+                    param_list.join(", ")
+                ));
             }
             Stmt::External { name, js_name, .. } => {
                 parts.push(format!("const {name} = {js_name};"));
@@ -441,8 +471,15 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
     for (i, arm) in arms.iter().enumerate() {
         let pat_cond = render_pattern_condition("__match", &arm.pat);
         let bindings = pattern_bindings("__match", &arm.pat);
-        let decls: Vec<String> = bindings.iter().map(|(n, e)| format!("const {n} = {e};")).collect();
-        let binds_js = if decls.is_empty() { String::new() } else { format!("{} ", decls.join(" ")) };
+        let decls: Vec<String> = bindings
+            .iter()
+            .map(|(n, e)| format!("const {n} = {e};"))
+            .collect();
+        let binds_js = if decls.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", decls.join(" "))
+        };
         let body = render_js(&arm.expr, 0);
 
         // Pattern condition (guard is checked after bindings are established)
@@ -459,7 +496,9 @@ fn render_match(expr: &Expr, arms: &[MatchArm]) -> String {
         if i == 0 {
             parts.push(format!("if ({cond}) {{ {binds_js}{body_with_guard} }}"));
         } else {
-            parts.push(format!("else if ({cond}) {{ {binds_js}{body_with_guard} }}"));
+            parts.push(format!(
+                "else if ({cond}) {{ {binds_js}{body_with_guard} }}"
+            ));
         }
     }
     parts.push("return undefined;".to_string());
@@ -509,7 +548,10 @@ fn has_self_call(fn_name: &str, expr: &Expr) -> bool {
             has_self_call(fn_name, expr)
                 || arms.iter().any(|arm| {
                     has_self_call(fn_name, &arm.expr)
-                        || arm.guard.as_ref().map_or(false, |g| has_self_call(fn_name, g))
+                        || arm
+                            .guard
+                            .as_ref()
+                            .map_or(false, |g| has_self_call(fn_name, g))
                 })
         }
         ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
@@ -555,7 +597,10 @@ fn all_self_calls_in_tail_position(fn_name: &str, expr: &Expr, in_tail: bool) ->
                     .iter()
                     .all(|a| all_self_calls_in_tail_position(fn_name, a, false))
         }
-        ExprKind::Match { expr: scrutinee, arms } => {
+        ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => {
             // Scrutinee is not in tail position
             if !all_self_calls_in_tail_position(fn_name, scrutinee, false) {
                 return false;
@@ -613,9 +658,7 @@ fn all_self_calls_in_tail_position(fn_name: &str, expr: &Expr, in_tail: bool) ->
         ExprKind::Constructor { fields, .. } | ExprKind::Record(fields) => fields
             .iter()
             .all(|(_, e)| all_self_calls_in_tail_position(fn_name, e, false)),
-        ExprKind::FieldAccess { expr, .. } => {
-            all_self_calls_in_tail_position(fn_name, expr, false)
-        }
+        ExprKind::FieldAccess { expr, .. } => all_self_calls_in_tail_position(fn_name, expr, false),
         ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Var { .. } => true,
     }
 }
@@ -640,10 +683,7 @@ fn render_tco_expr(expr: &Expr, ctx: &TcoContext, in_tail: bool) -> String {
 
                         if ctx.params.len() == 1 {
                             // Single parameter: simple assignment
-                            return format!(
-                                "{} = {}; continue;",
-                                ctx.params[0], rendered_args[0]
-                            );
+                            return format!("{} = {}; continue;", ctx.params[0], rendered_args[0]);
                         } else {
                             // Multiple parameters: use destructuring to avoid order issues
                             return format!(
@@ -663,9 +703,10 @@ fn render_tco_expr(expr: &Expr, ctx: &TcoContext, in_tail: bool) -> String {
                 js
             }
         }
-        ExprKind::Match { expr: scrutinee, arms } => {
-            render_tco_match(scrutinee, arms, ctx, in_tail)
-        }
+        ExprKind::Match {
+            expr: scrutinee,
+            arms,
+        } => render_tco_match(scrutinee, arms, ctx, in_tail),
         ExprKind::Block(stmts) => render_tco_block(stmts, ctx, in_tail),
         _ => {
             // For other expressions, just render normally
@@ -680,7 +721,12 @@ fn render_tco_expr(expr: &Expr, ctx: &TcoContext, in_tail: bool) -> String {
 }
 
 /// Render a match expression with TCO
-fn render_tco_match(scrutinee: &Expr, arms: &[MatchArm], ctx: &TcoContext, in_tail: bool) -> String {
+fn render_tco_match(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    ctx: &TcoContext,
+    in_tail: bool,
+) -> String {
     let scrutinee_js = render_js(scrutinee, 0);
     let mut parts = Vec::new();
     parts.push(format!("const __match = {};", scrutinee_js));
@@ -750,10 +796,7 @@ fn render_tco_block(stmts: &[Stmt], ctx: &TcoContext, in_tail: bool) -> String {
                 }
             }
             Stmt::Fn {
-                name,
-                params,
-                body,
-                ..
+                name, params, body, ..
             } => {
                 let js_body = render_js(body, 0);
                 let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();

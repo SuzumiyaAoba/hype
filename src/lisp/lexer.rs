@@ -3,14 +3,14 @@ use std::ops::Range;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Brackets
-    LParen,     // (
-    RParen,     // )
-    LBracket,   // [
-    RBracket,   // ]
-    LBrace,     // {
-    RBrace,     // }
-    LAngle,     // <
-    RAngle,     // >
+    LParen,   // (
+    RParen,   // )
+    LBracket, // [
+    RBracket, // ]
+    LBrace,   // {
+    RBrace,   // }
+    LAngle,   // <
+    RAngle,   // >
 
     // Literals
     Number(f64),
@@ -22,11 +22,11 @@ pub enum Token {
     Keyword(String), // :keyword
 
     // Special characters
-    Colon,      // :
-    Arrow,      // ->
-    Ampersand,  // &
-    Comma,      // ,
-    Ellipsis,   // ...
+    Colon,     // :
+    Arrow,     // ->
+    Ampersand, // &
+    Comma,     // ,
+    Ellipsis,  // ...
 
     // End of file
     Eof,
@@ -158,8 +158,17 @@ impl Lexer {
 
         while let Some(ch) = self.current() {
             if ch.is_alphanumeric()
-                || ch == '_' || ch == '-' || ch == '?' || ch == '!' || ch == '/'
-                || ch == '+' || ch == '*' || ch == '<' || ch == '>' || ch == '=' {
+                || ch == '_'
+                || ch == '-'
+                || ch == '?'
+                || ch == '!'
+                || ch == '/'
+                || ch == '+'
+                || ch == '*'
+                || ch == '<'
+                || ch == '>'
+                || ch == '='
+            {
                 self.advance();
             } else {
                 break;
@@ -209,7 +218,10 @@ impl Lexer {
             Some(':') => {
                 self.advance();
                 // Check if it's a keyword like :when
-                if self.current().map_or(false, |ch| ch.is_alphabetic() || ch == '_') {
+                if self
+                    .current()
+                    .map_or(false, |ch| ch.is_alphabetic() || ch == '_')
+                {
                     let sym = self.read_symbol();
                     Token::Keyword(sym)
                 } else {
@@ -249,7 +261,15 @@ impl Lexer {
                 let field = self.read_symbol();
                 Token::Symbol(format!(".{}", field))
             }
-            Some(ch) if ch.is_alphabetic() || ch == '_' || ch == '+' || ch == '*' || ch == '<' || ch == '>' || ch == '=' => {
+            Some(ch)
+                if ch.is_alphabetic()
+                    || ch == '_'
+                    || ch == '+'
+                    || ch == '*'
+                    || ch == '<'
+                    || ch == '>'
+                    || ch == '=' =>
+            {
                 let sym = self.read_symbol();
                 match sym.as_str() {
                     "true" => Token::Bool(true),
@@ -292,113 +312,92 @@ mod tests {
     fn test_brackets() {
         let mut lexer = Lexer::new("( ) [ ] { }");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::LParen,
-                Token::RParen,
-                Token::LBracket,
-                Token::RBracket,
-                Token::LBrace,
-                Token::RBrace,
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::LParen,
+            Token::RParen,
+            Token::LBracket,
+            Token::RBracket,
+            Token::LBrace,
+            Token::RBrace,
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_comparison_operators() {
         let mut lexer = Lexer::new("< > <= >= ==");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::Symbol("<".to_string()),
-                Token::Symbol(">".to_string()),
-                Token::Symbol("<=".to_string()),
-                Token::Symbol(">=".to_string()),
-                Token::Symbol("==".to_string()),
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::Symbol("<".to_string()),
+            Token::Symbol(">".to_string()),
+            Token::Symbol("<=".to_string()),
+            Token::Symbol(">=".to_string()),
+            Token::Symbol("==".to_string()),
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_numbers() {
         let mut lexer = Lexer::new("123 45.67 0.5");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::Number(123.0),
-                Token::Number(45.67),
-                Token::Number(0.5),
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::Number(123.0),
+            Token::Number(45.67),
+            Token::Number(0.5),
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_strings() {
         let mut lexer = Lexer::new(r#""hello" "world""#);
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::String("hello".to_string()),
-                Token::String("world".to_string()),
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::String("hello".to_string()),
+            Token::String("world".to_string()),
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_symbols() {
         let mut lexer = Lexer::new("+ defn let match");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::Symbol("+".to_string()),
-                Token::Symbol("defn".to_string()),
-                Token::Symbol("let".to_string()),
-                Token::Symbol("match".to_string()),
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::Symbol("+".to_string()),
+            Token::Symbol("defn".to_string()),
+            Token::Symbol("let".to_string()),
+            Token::Symbol("match".to_string()),
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_simple_sexp() {
         let mut lexer = Lexer::new("(+ 1 2)");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::LParen,
-                Token::Symbol("+".to_string()),
-                Token::Number(1.0),
-                Token::Number(2.0),
-                Token::RParen,
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::LParen,
+            Token::Symbol("+".to_string()),
+            Token::Number(1.0),
+            Token::Number(2.0),
+            Token::RParen,
+            Token::Eof,
+        ]);
     }
 
     #[test]
     fn test_comment() {
         let mut lexer = Lexer::new("; This is a comment\n(+ 1 2)");
         let tokens: Vec<Token> = lexer.tokenize().into_iter().map(|t| t.token).collect();
-        assert_eq!(
-            tokens,
-            vec![
-                Token::LParen,
-                Token::Symbol("+".to_string()),
-                Token::Number(1.0),
-                Token::Number(2.0),
-                Token::RParen,
-                Token::Eof,
-            ]
-        );
+        assert_eq!(tokens, vec![
+            Token::LParen,
+            Token::Symbol("+".to_string()),
+            Token::Number(1.0),
+            Token::Number(2.0),
+            Token::RParen,
+            Token::Eof,
+        ]);
     }
 }

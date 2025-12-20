@@ -5,18 +5,18 @@ use super::lexer::{Lexer, Token, TokenSpan};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Sexp {
     Symbol(String),
-    Keyword(String),                // :keyword
+    Keyword(String), // :keyword
     Number(f64),
     String(String),
     Bool(bool),
-    List(Vec<Sexp>),                // ()
-    Vector(Vec<Sexp>),              // [] (space-separated list)
-    Tuple(Vec<Sexp>),               // [,] (comma-separated tuple)
-    Map(Vec<(Sexp, Sexp)>),         // {}
-    Tagged(String, Vec<Sexp>),      // <tag attrs children>
-    Colon,                          // : (for type annotations)
-    Arrow,                          // -> (for function types)
-    Ellipsis,                       // ... (for rest patterns)
+    List(Vec<Sexp>),           // ()
+    Vector(Vec<Sexp>),         // [] (space-separated list)
+    Tuple(Vec<Sexp>),          // [,] (comma-separated tuple)
+    Map(Vec<(Sexp, Sexp)>),    // {}
+    Tagged(String, Vec<Sexp>), // <tag attrs children>
+    Colon,                     // : (for type annotations)
+    Arrow,                     // -> (for function types)
+    Ellipsis,                  // ... (for rest patterns)
 }
 
 #[derive(Debug, Clone)]
@@ -302,7 +302,11 @@ mod tests {
         assert_eq!(sexps.len(), 1);
         assert_eq!(
             sexps[0].sexp,
-            Sexp::Vector(vec![Sexp::Number(1.0), Sexp::Number(2.0), Sexp::Number(3.0)])
+            Sexp::Vector(vec![
+                Sexp::Number(1.0),
+                Sexp::Number(2.0),
+                Sexp::Number(3.0)
+            ])
         );
     }
 

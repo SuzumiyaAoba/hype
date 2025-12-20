@@ -1,10 +1,14 @@
 use clap::Parser;
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Hype - LISP-style functional language transpiler")]
+#[command(
+    author,
+    version,
+    about = "Hype - LISP-style functional language transpiler"
+)]
 struct Args {
     /// LISP式を文字列で指定、または .lisp ファイルパス（未指定なら REPL）
     expr: Option<String>,

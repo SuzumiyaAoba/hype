@@ -31,7 +31,11 @@ fn lisp_file_rejects_external() {
     // Create a temporary file with external declaration (not .ffi.lisp)
     let temp_dir = std::env::temp_dir();
     let temp_file = temp_dir.join("test_external.lisp");
-    std::fs::write(&temp_file, "(external log (-> String Unit) \"console.log\")").unwrap();
+    std::fs::write(
+        &temp_file,
+        "(external log (-> String Unit) \"console.log\")",
+    )
+    .unwrap();
 
     let result = transpile_file(&temp_file);
     assert!(result.is_err());

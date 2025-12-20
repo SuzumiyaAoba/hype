@@ -65,12 +65,15 @@ fn test_transpile_function_call() {
 
 #[test]
 fn test_transpile_do_block() {
-    let result = transpile_lisp(r#"
+    let result = transpile_lisp(
+        r#"
         (do
           (let [x 10] x)
           (let [y 20] y)
           (+ x y))
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     assert!(result.contains("x"));
     assert!(result.contains("y"));
 }

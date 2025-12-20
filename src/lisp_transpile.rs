@@ -15,11 +15,13 @@ pub fn parse_lisp(input: &str) -> Result<Vec<Stmt>, ParseError> {
     // Transform to internal AST
     let sexps: Vec<_> = sexps.into_iter().map(|s| s.sexp).collect();
     let mut transformer = Transformer::new(input);
-    let stmts = transformer.transform_program(sexps).map_err(|e| ParseError {
-        message: format!("Transform error: {}", e),
-        span: 0..0,
-        source: input.to_string(),
-    })?;
+    let stmts = transformer
+        .transform_program(sexps)
+        .map_err(|e| ParseError {
+            message: format!("Transform error: {}", e),
+            span: 0..0,
+            source: input.to_string(),
+        })?;
 
     Ok(stmts)
 }
@@ -46,14 +48,12 @@ mod tests {
         let stmts = parse_lisp("(+ 1 2)").unwrap();
         assert_eq!(stmts.len(), 1);
         match &stmts[0] {
-            Stmt::Expr(expr) => {
-                match &expr.kind {
-                    ExprKind::Binary { op, .. } => {
-                        assert!(matches!(op, BinOp::Add));
-                    }
-                    _ => panic!("Expected Binary expression"),
+            Stmt::Expr(expr) => match &expr.kind {
+                ExprKind::Binary { op, .. } => {
+                    assert!(matches!(op, BinOp::Add));
                 }
-            }
+                _ => panic!("Expected Binary expression"),
+            },
             _ => panic!("Expected Expr statement"),
         }
     }
@@ -63,20 +63,18 @@ mod tests {
         let stmts = parse_lisp("(let [x 10] (+ x 5))").unwrap();
         assert_eq!(stmts.len(), 1);
         match &stmts[0] {
-            Stmt::Expr(expr) => {
-                match &expr.kind {
-                    ExprKind::Block(stmts) => {
-                        assert_eq!(stmts.len(), 2);
-                        match &stmts[0] {
-                            Stmt::Let { name, .. } => {
-                                assert_eq!(name, "x");
-                            }
-                            _ => panic!("Expected Let statement"),
+            Stmt::Expr(expr) => match &expr.kind {
+                ExprKind::Block(stmts) => {
+                    assert_eq!(stmts.len(), 2);
+                    match &stmts[0] {
+                        Stmt::Let { name, .. } => {
+                            assert_eq!(name, "x");
                         }
+                        _ => panic!("Expected Let statement"),
                     }
-                    _ => panic!("Expected Block expression"),
                 }
-            }
+                _ => panic!("Expected Block expression"),
+            },
             _ => panic!("Expected Expr statement"),
         }
     }

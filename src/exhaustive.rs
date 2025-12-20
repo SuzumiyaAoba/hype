@@ -31,7 +31,10 @@ pub fn check_exhaustiveness(
 /// Find patterns that are not covered
 fn find_missing_patterns(patterns: &[Pattern], ty: &Type, env: &TypeEnv) -> Vec<String> {
     // Check if any pattern is a wildcard or bind (catches everything)
-    if patterns.iter().any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_))) {
+    if patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)))
+    {
         return vec![];
     }
 
@@ -42,8 +45,8 @@ fn find_missing_patterns(patterns: &[Pattern], ty: &Type, env: &TypeEnv) -> Vec<
         Type::Tuple(elem_types) => check_tuple_exhaustiveness(patterns, elem_types, env),
         Type::List(elem_type) => check_list_exhaustiveness(patterns, elem_type, env),
         Type::Adt { name, .. } => check_adt_exhaustiveness(patterns, name, env),
-        Type::Unit => vec![], // Unit has only one value
-        Type::Var(_) => vec![], // Unknown type, assume exhaustive
+        Type::Unit => vec![],      // Unit has only one value
+        Type::Var(_) => vec![],    // Unknown type, assume exhaustive
         Type::Fun(_, _) => vec![], // Function types can't be pattern matched meaningfully
         Type::Record(_) => vec![], // Record exhaustiveness is complex, assume exhaustive for now
     }
@@ -79,9 +82,9 @@ fn check_bool_exhaustiveness(patterns: &[Pattern]) -> Vec<String> {
 /// Check Number exhaustiveness: need wildcard or bind
 fn check_number_exhaustiveness(patterns: &[Pattern]) -> Vec<String> {
     // Numbers are infinite, so we need a catch-all pattern
-    let has_catchall = patterns.iter().any(|p| {
-        matches!(p, Pattern::Wildcard | Pattern::Bind(_))
-    });
+    let has_catchall = patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)));
 
     if has_catchall {
         vec![]
@@ -93,9 +96,9 @@ fn check_number_exhaustiveness(patterns: &[Pattern]) -> Vec<String> {
 /// Check String exhaustiveness: need wildcard or bind
 fn check_string_exhaustiveness(patterns: &[Pattern]) -> Vec<String> {
     // Strings are infinite, so we need a catch-all pattern
-    let has_catchall = patterns.iter().any(|p| {
-        matches!(p, Pattern::Wildcard | Pattern::Bind(_))
-    });
+    let has_catchall = patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)));
 
     if has_catchall {
         vec![]
@@ -111,7 +114,10 @@ fn check_tuple_exhaustiveness(
     env: &TypeEnv,
 ) -> Vec<String> {
     // If any pattern is a wildcard or bind, it's exhaustive
-    if patterns.iter().any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_))) {
+    if patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)))
+    {
         return vec![];
     }
 
@@ -155,7 +161,10 @@ fn check_list_exhaustiveness(
     _env: &TypeEnv,
 ) -> Vec<String> {
     // If any pattern is a wildcard or bind, it's exhaustive
-    if patterns.iter().any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_))) {
+    if patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)))
+    {
         return vec![];
     }
 
@@ -190,13 +199,12 @@ fn check_list_exhaustiveness(
 }
 
 /// Check ADT exhaustiveness: need all constructors covered
-fn check_adt_exhaustiveness(
-    patterns: &[Pattern],
-    type_name: &str,
-    env: &TypeEnv,
-) -> Vec<String> {
+fn check_adt_exhaustiveness(patterns: &[Pattern], type_name: &str, env: &TypeEnv) -> Vec<String> {
     // If any pattern is a wildcard or bind, it's exhaustive
-    if patterns.iter().any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_))) {
+    if patterns
+        .iter()
+        .any(|p| matches!(p, Pattern::Wildcard | Pattern::Bind(_)))
+    {
         return vec![];
     }
 
@@ -290,19 +298,34 @@ mod tests {
     #[test]
     fn test_list_exhaustive() {
         let patterns = vec![
-            Pattern::List { items: vec![], rest: None },
-            Pattern::List { items: vec![Pattern::Bind("h".to_string())], rest: Some("t".to_string()) },
+            Pattern::List {
+                items: vec![],
+                rest: None,
+            },
+            Pattern::List {
+                items: vec![Pattern::Bind("h".to_string())],
+                rest: Some("t".to_string()),
+            },
         ];
-        let result = check_exhaustiveness(&patterns, &Type::List(Box::new(Type::Number)), &TypeEnv::default());
+        let result = check_exhaustiveness(
+            &patterns,
+            &Type::List(Box::new(Type::Number)),
+            &TypeEnv::default(),
+        );
         assert!(result.is_exhaustive);
     }
 
     #[test]
     fn test_list_missing_empty() {
-        let patterns = vec![
-            Pattern::List { items: vec![Pattern::Bind("h".to_string())], rest: Some("t".to_string()) },
-        ];
-        let result = check_exhaustiveness(&patterns, &Type::List(Box::new(Type::Number)), &TypeEnv::default());
+        let patterns = vec![Pattern::List {
+            items: vec![Pattern::Bind("h".to_string())],
+            rest: Some("t".to_string()),
+        }];
+        let result = check_exhaustiveness(
+            &patterns,
+            &Type::List(Box::new(Type::Number)),
+            &TypeEnv::default(),
+        );
         assert!(!result.is_exhaustive);
         assert!(result.missing_patterns.contains(&"[]".to_string()));
     }

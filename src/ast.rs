@@ -11,10 +11,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     List(Box<Type>),
     Record(Vec<(std::string::String, Type)>),
-    Adt {
-        name: String,
-        args: Vec<Type>,
-    },
+    Adt { name: String, args: Vec<Type> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,7 +43,9 @@ pub struct Expr {
 pub enum ExprKind {
     Number(f64),
     Bool(bool),
-    Var { name: String },
+    Var {
+        name: String,
+    },
     Str(String),
     Tuple(Vec<Expr>),
     List(Vec<Expr>),
@@ -127,8 +126,15 @@ pub struct Variant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Import { path: String },
-    Let { name: String, ty: Option<Type>, expr: Expr, recursive: bool },
+    Import {
+        path: String,
+    },
+    Let {
+        name: String,
+        ty: Option<Type>,
+        expr: Expr,
+        recursive: bool,
+    },
     Fn {
         name: String,
         params: Vec<(String, Option<Type>)>,
