@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/tco.rs
+expression: js
+---
+function factorial_bad(n) { return (() => { const __match = n == 0; if (__match === true) { return 1; } else if (__match === false) { return n * factorial_bad(n - 1); } return undefined; })(); }
+factorial_bad(5)

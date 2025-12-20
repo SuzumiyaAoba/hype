@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/tco.rs
+expression: js
+---
+function countdown(n) { while (true) { const __match = n; if (__match === 0) { return 0; } else if (true) { const x = __match; n = x - 1; continue; } return undefined; } }
+countdown(10)
