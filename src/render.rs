@@ -123,6 +123,17 @@ pub fn render_js(expr: &Expr, parent_prec: u8) -> String {
                 format!("{{ __tag: \"{}\", {} }}", name, field_parts.join(", "))
             }
         }
+        ExprKind::Record(fields) => {
+            let field_parts: Vec<String> = fields
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, render_js(v, 0)))
+                .collect();
+            format!("{{ {} }}", field_parts.join(", "))
+        }
+        ExprKind::FieldAccess { expr, field } => {
+            let expr_js = render_js(expr, 0);
+            format!("{}.{}", expr_js, field)
+        }
     }
 }
 
@@ -245,6 +256,17 @@ fn render_pattern_condition(var: &str, pat: &crate::ast::Pattern) -> String {
             }
             conds.join(" && ")
         }
+        crate::ast::Pattern::Record { fields } => {
+            let mut conds = vec![format!("typeof {var} === \"object\"")];
+            for (field_name, field_pat) in fields {
+                let inner_var = format!("{var}.{field_name}");
+                let cond = render_pattern_condition(&inner_var, field_pat);
+                if cond != "true" {
+                    conds.push(cond);
+                }
+            }
+            conds.join(" && ")
+        }
     }
 }
 
@@ -271,6 +293,13 @@ fn pattern_bindings(var: &str, pat: &crate::ast::Pattern) -> Vec<(String, String
             out
         }
         crate::ast::Pattern::Constructor { fields, .. } => {
+            let mut out = Vec::new();
+            for (field_name, field_pat) in fields {
+                out.extend(pattern_bindings(&format!("{var}.{field_name}"), field_pat));
+            }
+            out
+        }
+        crate::ast::Pattern::Record { fields } => {
             let mut out = Vec::new();
             for (field_name, field_pat) in fields {
                 out.extend(pattern_bindings(&format!("{var}.{field_name}"), field_pat));
@@ -338,6 +367,8 @@ fn expr_uses_fix(expr: &Expr) -> bool {
         ExprKind::Tuple(items) | ExprKind::List(items) => items.iter().any(expr_uses_fix),
         ExprKind::Lambda { body, .. } => expr_uses_fix(body),
         ExprKind::Constructor { fields, .. } => fields.iter().any(|(_, e)| expr_uses_fix(e)),
+        ExprKind::Record(fields) => fields.iter().any(|(_, e)| expr_uses_fix(e)),
+        ExprKind::FieldAccess { expr, .. } => expr_uses_fix(expr),
         ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Str(_) => false,
     }
 }

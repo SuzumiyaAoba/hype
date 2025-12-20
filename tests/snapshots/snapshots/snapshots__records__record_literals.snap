@@ -1,0 +1,15 @@
+---
+source: tests/snapshots/records.rs
+expression: out
+---
+{:x 1 :y 2}
+---
+{ x: 1, y: 2 }
+===
+{:name "Alice" :age 30}
+---
+{ name: "Alice", age: 30 }
+===
+{:point {:x 1 :y 2} :label "origin"}
+---
+{ point: { x: 1, y: 2 }, label: "origin" }

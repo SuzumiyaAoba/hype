@@ -24,3 +24,6 @@ mod exhaustiveness;
 
 #[path = "snapshots/match_guards.rs"]
 mod match_guards;
+
+#[path = "snapshots/records.rs"]
+mod records;

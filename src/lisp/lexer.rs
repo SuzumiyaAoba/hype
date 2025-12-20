@@ -243,6 +243,12 @@ impl Lexer {
                 let num = self.read_number();
                 Token::Number(num)
             }
+            // Field access: .field
+            Some('.') if self.peek(1).map_or(false, |c| c.is_alphabetic()) => {
+                self.advance(); // skip '.'
+                let field = self.read_symbol();
+                Token::Symbol(format!(".{}", field))
+            }
             Some(ch) if ch.is_alphabetic() || ch == '_' || ch == '+' || ch == '*' || ch == '<' || ch == '>' || ch == '=' => {
                 let sym = self.read_symbol();
                 match sym.as_str() {

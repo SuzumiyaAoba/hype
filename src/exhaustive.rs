@@ -45,6 +45,7 @@ fn find_missing_patterns(patterns: &[Pattern], ty: &Type, env: &TypeEnv) -> Vec<
         Type::Unit => vec![], // Unit has only one value
         Type::Var(_) => vec![], // Unknown type, assume exhaustive
         Type::Fun(_, _) => vec![], // Function types can't be pattern matched meaningfully
+        Type::Record(_) => vec![], // Record exhaustiveness is complex, assume exhaustive for now
     }
 }
 

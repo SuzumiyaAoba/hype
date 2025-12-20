@@ -10,6 +10,7 @@ pub enum Type {
     Fun(Vec<Type>, Box<Type>),
     Tuple(Vec<Type>),
     List(Box<Type>),
+    Record(Vec<(std::string::String, Type)>),
     Adt {
         name: String,
         args: Vec<Type>,
@@ -71,6 +72,11 @@ pub enum ExprKind {
         name: String,
         fields: Vec<(String, Expr)>,
     },
+    Record(Vec<(String, Expr)>),
+    FieldAccess {
+        expr: Box<Expr>,
+        field: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,6 +93,9 @@ pub enum Pattern {
     Bind(String),
     Constructor {
         name: String,
+        fields: Vec<(String, Pattern)>,
+    },
+    Record {
         fields: Vec<(String, Pattern)>,
     },
 }

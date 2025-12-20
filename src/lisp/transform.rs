@@ -125,6 +125,15 @@ impl Transformer {
                     Sexp::Symbol(s) if s == "if" => {
                         self.transform_if(&items[1..])?
                     }
+                    // Field access: (.field expr)
+                    Sexp::Symbol(s) if s.starts_with('.') && s.len() > 1 => {
+                        if items.len() != 2 {
+                            return Err("field access requires exactly one argument".to_string());
+                        }
+                        let field = s[1..].to_string();
+                        let record_expr = Box::new(self.transform_expr(items[1].clone())?);
+                        ExprKind::FieldAccess { expr: record_expr, field }
+                    }
                     // Constructor or Function call
                     Sexp::Symbol(name) => {
                         let is_upper = name.chars().next().is_some_and(|c| c.is_ascii_uppercase());
@@ -205,8 +214,18 @@ impl Transformer {
                 }
             }
 
-            Sexp::Map(_) => {
-                return Err("Map literals not yet supported".to_string());
+            Sexp::Map(pairs) => {
+                // Record literal: {:x 1 :y 2}
+                let mut fields = Vec::new();
+                for (key, value) in pairs {
+                    let field_name = match key {
+                        Sexp::Symbol(n) => n.clone(),
+                        _ => return Err("Record field name must be a symbol".to_string()),
+                    };
+                    let field_expr = self.transform_expr(value.clone())?;
+                    fields.push((field_name, field_expr));
+                }
+                ExprKind::Record(fields)
             }
             Sexp::Tagged(_, _) => {
                 return Err("Tagged expressions (HTML) not yet supported".to_string());
@@ -833,6 +852,20 @@ impl Transformer {
                     }
                     _ => Err("Invalid pattern: list must start with uppercase constructor name".to_string()),
                 }
+            }
+
+            // Record pattern: {:field pat ...}
+            Sexp::Map(pairs) => {
+                let mut fields = Vec::new();
+                for (key, value) in pairs {
+                    let field_name = match key {
+                        Sexp::Symbol(n) => n.clone(),
+                        _ => return Err("Record field name must be a symbol".to_string()),
+                    };
+                    let field_pat = self.parse_pattern(value)?;
+                    fields.push((field_name, field_pat));
+                }
+                Ok(Pattern::Record { fields })
             }
 
             _ => Err(format!("Invalid pattern: {:?}", sexp)),
