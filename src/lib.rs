@@ -205,8 +205,35 @@ fn resolve_imports(
     Ok(result)
 }
 
+/// Get the standard library path from environment or default location
+fn get_std_lib_path() -> PathBuf {
+    // Check environment variable first
+    if let Ok(path) = std::env::var("HYPE_STD_PATH") {
+        return PathBuf::from(path);
+    }
+
+    // Default: <executable_dir>/../lib/hype/std/
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let std_path = exe_dir.join("../lib/hype/std");
+            if let Ok(canonical) = std_path.canonicalize() {
+                return canonical;
+            }
+        }
+    }
+
+    // Fallback to relative path from current directory
+    PathBuf::from("lib/hype/std")
+}
+
 /// Resolve import path relative to the current file
 fn resolve_import_path(import: &str, base_path: Option<&Path>) -> Result<PathBuf, ParseError> {
+    // Handle std/ prefix for standard library imports
+    if let Some(stripped) = import.strip_prefix("std/") {
+        let std_path = get_std_lib_path();
+        return Ok(std_path.join(stripped));
+    }
+
     let import_path = Path::new(import);
 
     if import_path.is_absolute() {
