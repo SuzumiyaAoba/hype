@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function any(pred, lst) { while (true) { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return false; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const x = __match[0]; const rest = __match.slice(1); const __match = pred(x); if (__match === true) { return true; } else if (__match === false) { [pred, lst] = [pred, rest]; continue; } return undefined; } return undefined; } }
+(() => { let is_even = (function(x) { return x % 2 == 0; }); return any(is_even, [1, 3, 5, 7, 10]); })()

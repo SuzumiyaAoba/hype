@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function pow(base, exp, acc) { while (true) { const __match = exp == 0; if (__match === true) { return acc; } else if (__match === false) { [base, exp, acc] = [base, exp - 1, acc * base]; continue; } return undefined; } }
+pow(2, 10, 1)

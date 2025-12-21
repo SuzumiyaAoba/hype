@@ -1,0 +1,8 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function abs(x) { return (() => { const __match = x < 0; if (__match === true) { return 0 - x; } else if (__match === false) { return x; } return undefined; })(); }
+function min(a, b) { return (() => { const __match = a < b; if (__match === true) { return a; } else if (__match === false) { return b; } return undefined; })(); }
+function max(a, b) { return (() => { const __match = a > b; if (__match === true) { return a; } else if (__match === false) { return b; } return undefined; })(); }
+(() => { let x = abs(0 - 5); return (() => { let y = min(10, 3); return (() => { let z = max(10, 3); return x + y + z; })(); })(); })()

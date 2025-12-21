@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function all(pred, lst) { while (true) { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return true; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const x = __match[0]; const rest = __match.slice(1); const __match = pred(x); if (__match === true) { [pred, lst] = [pred, rest]; continue; } else if (__match === false) { return false; } return undefined; } return undefined; } }
+(() => { let is_positive = (function(x) { return x > 0; }); return all(is_positive, [1, 2, 3, 4, 5]); })()

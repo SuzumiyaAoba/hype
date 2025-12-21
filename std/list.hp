@@ -1,0 +1,159 @@
+;; Hype Standard Library - List Operations
+;; リスト操作関数
+
+;; ===== 基本的なリスト操作 =====
+
+;; リストの長さを取得（末尾再帰）
+(defn length_helper [l acc]
+  (match l
+    [[] acc]
+    [[_ ...rest] (length_helper rest (+ acc 1))]))
+
+(defn length [lst]
+  (length_helper lst 0))
+
+;; リストの先頭要素を取得（Option型で返す）
+(defn head [lst]
+  (match lst
+    [[] None]
+    [[x ..._] (Some {:value x})]))
+
+;; リストの末尾（先頭以外）を取得（Option型で返す）
+(defn tail [lst]
+  (match lst
+    [[] None]
+    [[_ ...xs] (Some {:value xs})]))
+
+;; リストを逆順にする（末尾再帰）
+(defn reverse_helper [l acc]
+  (match l
+    [[] acc]
+    [[x ...rest] (reverse_helper rest (+ acc 1))]))
+
+(defn reverse [lst]
+  (reverse_helper lst []))
+
+;; ===== 高階関数 =====
+
+;; リストの各要素に関数を適用（末尾再帰）
+(defn map_helper [f l acc]
+  (match l
+    [[] (reverse acc)]
+    [[x ...rest] (map_helper f rest (+ acc 1))]))
+
+(defn map [f lst]
+  (map_helper f lst []))
+
+;; 条件を満たす要素のみを残す（末尾再帰）
+(defn filter_helper [pred l acc]
+  (match l
+    [[] (reverse acc)]
+    [[x ...rest]
+      (if (pred x)
+        (filter_helper pred rest (+ acc 1))
+        (filter_helper pred rest acc))]))
+
+(defn filter [pred lst]
+  (filter_helper pred lst []))
+
+;; リストを左から畳み込む（末尾再帰）
+(defn fold_left [f init lst]
+  (match lst
+    [[] init]
+    [[x ...rest] (fold_left f (f init x) rest)]))
+
+;; リストを右から畳み込む
+(defn fold_right [f init lst]
+  (match lst
+    [[] init]
+    [[x ...rest] (f x (fold_right f init rest))]))
+
+;; ===== リスト結合・操作 =====
+
+;; 2つのリストを結合
+(defn append [lst1 lst2]
+  (match lst1
+    [[] lst2]
+    [[x ...rest] (append rest lst2)]))
+
+;; リストのリストを平坦化
+(defn concat [lists]
+  (fold_left append [] lists))
+
+;; 最初のN個の要素を取得（末尾再帰）
+(defn take_helper [count l acc]
+  (if (== count 0)
+    (reverse acc)
+    (match l
+      [[] (reverse acc)]
+      [[x ...rest] (take_helper (- count 1) rest (+ acc 1))])))
+
+(defn take [n lst]
+  (take_helper n lst []))
+
+;; 最初のN個の要素をスキップ（末尾再帰）
+(defn drop [n lst]
+  (if (== n 0)
+    lst
+    (match lst
+      [[] []]
+      [[_ ...rest] (drop (- n 1) rest)])))
+
+;; ===== 述語関数 =====
+
+;; すべての要素が条件を満たすか判定（末尾再帰）
+(defn all [pred lst]
+  (match lst
+    [[] true]
+    [[x ...rest]
+      (if (pred x)
+        (all pred rest)
+        false)]))
+
+;; いずれかの要素が条件を満たすか判定（末尾再帰）
+(defn any [pred lst]
+  (match lst
+    [[] false]
+    [[x ...rest]
+      (if (pred x)
+        true
+        (any pred rest))]))
+
+;; リストに要素が含まれるか判定
+(defn contains [elem lst]
+  (any (fn [x] (== x elem)) lst))
+
+;; ===== 便利関数 =====
+
+;; 2つのリストを組み合わせる（末尾再帰）
+(defn zip_helper [l1 l2 acc]
+  (match l1
+    [[] (reverse acc)]
+    [[x ...rest1]
+      (match l2
+        [[] (reverse acc)]
+        [[y ...rest2] (zip_helper rest1 rest2 (+ acc 1))])]))
+
+(defn zip [lst1 lst2]
+  (zip_helper lst1 lst2 []))
+
+;; インデックスと要素のペアのリストを生成
+(defn enumerate_helper [l idx acc]
+  (match l
+    [[] (reverse acc)]
+    [[x ...rest] (enumerate_helper rest (+ idx 1) (+ acc 1))]))
+
+(defn enumerate [lst]
+  (enumerate_helper lst 0 []))
+
+;; リストから重複を除去（単純実装）
+(defn unique_helper [l acc]
+  (match l
+    [[] (reverse acc)]
+    [[x ...rest]
+      (if (contains x acc)
+        (unique_helper rest acc)
+        (unique_helper rest (+ acc 1)))]))
+
+(defn unique [lst]
+  (unique_helper lst []))

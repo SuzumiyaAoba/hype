@@ -102,7 +102,7 @@ pub(super) fn infer_expr(
                         })
                     }
                 }
-                crate::ast::BinOp::Sub | crate::ast::BinOp::Mul | crate::ast::BinOp::Div => {
+                crate::ast::BinOp::Sub | crate::ast::BinOp::Mul | crate::ast::BinOp::Div | crate::ast::BinOp::Mod => {
                     let num = Type::Number;
                     let s1 = unify(&lt, &num, &expr.span, source)?;
                     let s2 = unify(&rt, &num, &expr.span, source)?;

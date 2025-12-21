@@ -1,0 +1,7 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function is_even(n) { return n % 2 == 0; }
+function is_odd(n) { return n % 2 == 1; }
+(() => { let a = is_even(4); return (() => { let b = is_odd(5); return a && b; })(); })()

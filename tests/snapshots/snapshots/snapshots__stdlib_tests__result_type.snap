@@ -1,0 +1,7 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function is_ok(res) { return (() => { const __match = res; if (__match.__tag === "Ok") { return true; } else if (__match.__tag === "Err") { return false; } return undefined; })(); }
+function unwrap_or_result(res, default) { return (() => { const __match = res; if (__match.__tag === "Ok") { const v = __match.value; return v; } else if (__match.__tag === "Err") { return default; } return undefined; })(); }
+(() => { let success = { __tag: "Ok", value: 100 }; return (() => { let failure = { __tag: "Err", error: "oops" }; return (() => { const __match = is_ok(success); if (__match === true) { return unwrap_or_result(success, 0); } else if (__match === false) { return unwrap_or_result(failure, 42); } return undefined; })(); })(); })()

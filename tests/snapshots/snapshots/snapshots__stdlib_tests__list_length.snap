@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function length(lst, acc) { while (true) { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return acc; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const rest = __match.slice(1); [lst, acc] = [rest, acc + 1]; continue; } return undefined; } }
+length([1, 2, 3, 4, 5], 0)

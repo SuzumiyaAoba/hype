@@ -30,3 +30,6 @@ mod records;
 
 #[path = "snapshots/tco.rs"]
 mod tco;
+
+#[path = "snapshots/stdlib_tests.rs"]
+mod stdlib_tests;
