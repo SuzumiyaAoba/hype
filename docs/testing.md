@@ -267,12 +267,231 @@ hype my_test.hp | node
 - テスト結果の集約
 - TAP/JUnit形式での出力
 
+## コードカバレッジ
+
+Hypeは `--coverage` フラグによるコードカバレッジ計測機能を提供します。
+
+### カバレッジの有効化
+
+コードカバレッジを有効にするには、トランスパイル時に `--coverage` フラグを使用します。
+
+```bash
+# カバレッジ計装を有効にしてトランスパイル
+hype --coverage my_test.hp > test.js
+node test.js
+```
+
+または環境変数を使用：
+
+```bash
+# 環境変数でカバレッジを有効化
+export HYPE_COVERAGE=1
+hype my_test.hp | node
+```
+
+### カバレッジレポートモジュール
+
+`std/coverage.ffi.hp` モジュールでカバレッジ情報を取得・表示できます。
+
+#### 利用可能な関数
+
+##### `get_coverage_percentage`
+カバレッジ率（0-100）を取得します。
+
+```lisp
+(import "std/coverage.ffi.hp")
+(let [coverage (get_coverage_percentage "")]
+  (log coverage))  ; 例: 85.5
+```
+
+**型シグネチャ**: `(-> String Number)`
+**注意**: ダミーの文字列引数が必要です（通常は `""` を渡します）
+
+##### `get_executed_count`
+実行されたステートメント数を取得します。
+
+```lisp
+(import "std/coverage.ffi.hp")
+(let [count (get_executed_count "")]
+  (log count))  ; 例: 10
+```
+
+**型シグネチャ**: `(-> String Number)`
+**注意**: ダミーの文字列引数が必要です（通常は `""` を渡します）
+
+##### `get_total_count`
+総ステートメント数を取得します。
+
+```lisp
+(import "std/coverage.ffi.hp")
+(let [total (get_total_count "")]
+  (log total))  ; 例: 15
+```
+
+**型シグネチャ**: `(-> String Number)`
+**注意**: ダミーの文字列引数が必要です（通常は `""` を渡します）
+
+##### `print_coverage_report`
+カバレッジレポートをコンソールに出力します。
+
+```lisp
+(import "std/coverage.ffi.hp")
+(print_coverage_report "")
+; 出力:
+; ==================================================
+; Code Coverage Report
+; ==================================================
+; Statements: 10/15 (66.67%)
+; ⚠ Moderate coverage
+; ==================================================
+```
+
+**型シグネチャ**: `(-> String Unit)`
+**注意**: ダミーの文字列引数が必要です（通常は `""` を渡します）
+
+##### `assert_coverage`
+最低カバレッジ率を保証します。カバレッジが指定した値未満の場合、エラーをthrowします。
+
+```lisp
+(import "std/coverage.ffi.hp")
+(assert_coverage 80)  ; 最低80%のカバレッジを要求
+```
+
+**型シグネチャ**: `(-> Number Unit)`
+
+### 使用例
+
+#### 基本的なカバレッジ計測
+
+```lisp
+(import "std/test.ffi.hp")
+(import "std/console.ffi.hp")
+(import "std/coverage.ffi.hp")
+
+(defn add [x y]
+  (+ x y))
+
+(defn multiply [x y]
+  (* x y))
+
+(defn test-math []
+  (do
+    (log "Testing addition...")
+    (assert_eq (add 1 2) 3)
+    (assert_eq (add 5 3) 8)
+    (log "Testing multiplication...")
+    (assert_eq (multiply 2 3) 6)
+    (assert_eq (multiply 4 5) 20)
+    (test_pass "Math tests passed")))
+
+(test-math)
+
+; カバレッジレポートを出力
+(print_coverage_report)
+```
+
+実行方法：
+
+```bash
+hype --coverage math_test.hp | node
+```
+
+#### カバレッジ率の確認
+
+```lisp
+(import "std/coverage.ffi.hp")
+(import "std/console.ffi.hp")
+
+; ... テスト実行 ...
+
+(let [coverage (get_coverage_percentage)]
+  (do
+    (log (+ "Coverage: " (+ coverage "%")))
+    (if (>= coverage 80)
+      (log "✓ Good coverage!")
+      (log "✗ Coverage too low"))))
+```
+
+#### 最低カバレッジ率の強制
+
+```lisp
+(import "std/test.ffi.hp")
+(import "std/coverage.ffi.hp")
+
+; ... テスト実行 ...
+
+; 最低80%のカバレッジを要求
+(assert_coverage 80)
+(test_pass "All tests passed with sufficient coverage")
+```
+
+### カバレッジの仕組み
+
+カバレッジ機能は以下のように動作します：
+
+1. **計装コードの挿入**: トランスパイル時に各ステートメントの実行を記録するコードが挿入されます
+2. **実行追跡**: プログラム実行時にグローバルオブジェクト `__hype_coverage` に実行情報が記録されます
+3. **レポート生成**: カバレッジFFIモジュールで実行情報を集計・表示します
+
+#### 計装コードの例
+
+```lisp
+(defn add [x y]
+  (+ x y))
+
+(add 1 2)
+```
+
+カバレッジ有効時のトランスパイル結果：
+
+```javascript
+const __hype_coverage = { total: 0, executed: new Set() };
+__hype_coverage.total = 2;
+__hype_coverage.executed.add(0);
+function add(x, y) { return x + y; }
+__hype_coverage.executed.add(1);
+add(1, 2)
+```
+
+### 制限事項
+
+- **ステートメント単位**: 現在のカバレッジは ステートメント単位で計測されます（式や分岐単位ではありません）
+- **トップレベルのみ**: 関数内部のステートメントは計測対象外です
+- **import/type宣言**: `import` と `type` 宣言はカバレッジ計測の対象外です
+
+### ベストプラクティス
+
+#### 1. テスト実行時に常にカバレッジを計測
+
+```bash
+hype --coverage tests/*_test.hp | node
+```
+
+#### 2. CIパイプラインでカバレッジを確認
+
+```lisp
+(import "std/coverage.ffi.hp")
+
+; テスト実行後
+(assert_coverage 80)  ; 80%未満でCI失敗
+(print_coverage_report)
+```
+
+#### 3. カバレッジレポートをログとして保存
+
+```bash
+hype --coverage test.hp | node > test_output.log 2>&1
+```
+
 ## 将来の拡張
 
 ### 予定されている機能
 
 - モック関数のサポート
-- テストカバレッジツール
+- 関数内部のカバレッジ計測
+- 分岐カバレッジ（ブランチカバレッジ）
+- ソースマップサポート
+- HTML形式のカバレッジレポート
 - ベンチマークツール
 - パラメータ化テスト
 

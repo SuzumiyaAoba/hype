@@ -1,0 +1,76 @@
+;; Code Coverage FFI Functions
+;;
+;; This module provides code coverage reporting utilities for Hype.
+;; Import with: (import "std/coverage.ffi.hp")
+;;
+;; IMPORTANT: Use the --coverage flag when transpiling to enable coverage tracking:
+;; hype --coverage my_test.hp | node
+
+;; Get coverage percentage (0-100)
+;; Note: Takes a dummy String argument (pass "" or any string)
+(external get_coverage_percentage (-> String Number) "function(_) {
+  if (typeof __hype_coverage === 'undefined') {
+    throw new Error('Coverage tracking not enabled. Use --coverage flag when transpiling.');
+  }
+  if (__hype_coverage.total === 0) return 100;
+  return (__hype_coverage.executed.size / __hype_coverage.total) * 100;
+}")
+
+;; Get number of executed statements
+;; Note: Takes a dummy String argument (pass "" or any string)
+(external get_executed_count (-> String Number) "function(_) {
+  if (typeof __hype_coverage === 'undefined') {
+    throw new Error('Coverage tracking not enabled. Use --coverage flag when transpiling.');
+  }
+  return __hype_coverage.executed.size;
+}")
+
+;; Get total number of statements
+;; Note: Takes a dummy String argument (pass "" or any string)
+(external get_total_count (-> String Number) "function(_) {
+  if (typeof __hype_coverage === 'undefined') {
+    throw new Error('Coverage tracking not enabled. Use --coverage flag when transpiling.');
+  }
+  return __hype_coverage.total;
+}")
+
+;; Print coverage report to console
+;; Note: Takes a dummy String argument (pass "" or any string)
+(external print_coverage_report (-> String Unit) "function(_) {
+  if (typeof __hype_coverage === 'undefined') {
+    throw new Error('Coverage tracking not enabled. Use --coverage flag when transpiling.');
+  }
+  const executed = __hype_coverage.executed.size;
+  const total = __hype_coverage.total;
+  const percentage = total === 0 ? 100 : (executed / total) * 100;
+
+  console.log('\\n' + '='.repeat(50));
+  console.log('Code Coverage Report');
+  console.log('='.repeat(50));
+  console.log(`Statements: ${executed}/${total} (${percentage.toFixed(2)}%)`);
+
+  if (percentage === 100) {
+    console.log('✓ Full coverage achieved!');
+  } else if (percentage >= 80) {
+    console.log('✓ Good coverage');
+  } else if (percentage >= 60) {
+    console.log('⚠ Moderate coverage');
+  } else {
+    console.log('✗ Low coverage');
+  }
+  console.log('='.repeat(50) + '\\n');
+}")
+
+;; Assert that coverage meets minimum threshold (percentage)
+(external assert_coverage (-> Number Unit) "function(minPercentage) {
+  if (typeof __hype_coverage === 'undefined') {
+    throw new Error('Coverage tracking not enabled. Use --coverage flag when transpiling.');
+  }
+  const executed = __hype_coverage.executed.size;
+  const total = __hype_coverage.total;
+  const percentage = total === 0 ? 100 : (executed / total) * 100;
+
+  if (percentage < minPercentage) {
+    throw new Error(`Coverage assertion failed: ${percentage.toFixed(2)}% < ${minPercentage}%`);
+  }
+}")
