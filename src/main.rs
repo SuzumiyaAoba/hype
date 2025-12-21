@@ -21,6 +21,9 @@ struct Args {
     /// 推論注釈付きソースの出力先（\"-\"=stdout, \"stderr\"=標準エラー, それ以外はファイルパス）
     #[arg(long)]
     infer_annotated_out: Option<String>,
+    /// コードカバレッジ計装を有効化
+    #[arg(long)]
+    coverage: bool,
 }
 
 fn main() {
@@ -32,6 +35,9 @@ fn main() {
         }
         if let Some(path) = &args.infer_annotated_out {
             std::env::set_var("HYPE_INFER_ANNOTATED_OUT", path);
+        }
+        if args.coverage {
+            std::env::set_var("HYPE_COVERAGE", "1");
         }
     }
 

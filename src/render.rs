@@ -9,6 +9,11 @@ struct TcoContext {
     params: Vec<String>,
 }
 
+/// Check if coverage instrumentation is enabled
+fn coverage_enabled() -> bool {
+    std::env::var("HYPE_COVERAGE").is_ok()
+}
+
 pub fn binop_precedence(op: &BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -40,18 +45,47 @@ fn binop_symbol(op: &BinOp) -> &'static str {
 
 pub fn render_program(stmts: &[Stmt]) -> String {
     let mut lines = Vec::new();
+    let coverage = coverage_enabled();
+
     if needs_fix_prelude(stmts) {
         lines.push(FIX_JS.to_string());
     }
+
+    // Initialize coverage tracking if enabled
+    if coverage {
+        lines.push("const __hype_coverage = { total: 0, executed: new Set() };".to_string());
+    }
+
+    // Count total statements for coverage
+    let mut stmt_id = 0;
+    if coverage {
+        for stmt in stmts.iter() {
+            match stmt {
+                Stmt::Import { .. } | Stmt::TypeDecl { .. } => {}
+                _ => stmt_id += 1,
+            }
+        }
+        lines.push(format!("__hype_coverage.total = {};", stmt_id));
+        stmt_id = 0; // Reset for instrumentation
+    }
+
     for (i, stmt) in stmts.iter().enumerate() {
         match stmt {
             Stmt::Let { name, expr, .. } => {
+                if coverage {
+                    lines.push(format!("__hype_coverage.executed.add({});", stmt_id));
+                    stmt_id += 1;
+                }
                 let js = render_js(expr, 0);
                 lines.push(format!("let {name} = {js};"));
             }
             Stmt::Fn {
                 name, params, body, ..
             } => {
+                if coverage {
+                    lines.push(format!("__hype_coverage.executed.add({});", stmt_id));
+                    stmt_id += 1;
+                }
                 let param_list: Vec<String> = params.iter().map(|(p, _)| p.clone()).collect();
 
                 // Check if this function is tail-recursive
@@ -76,6 +110,10 @@ pub fn render_program(stmts: &[Stmt]) -> String {
                 }
             }
             Stmt::External { name, js_name, .. } => {
+                if coverage {
+                    lines.push(format!("__hype_coverage.executed.add({});", stmt_id));
+                    stmt_id += 1;
+                }
                 lines.push(format!("const {name} = {js_name};"));
             }
             Stmt::Import { .. } => {
@@ -85,6 +123,10 @@ pub fn render_program(stmts: &[Stmt]) -> String {
                 // Type declarations don't produce JS output
             }
             Stmt::Expr(expr) => {
+                if coverage {
+                    lines.push(format!("__hype_coverage.executed.add({});", stmt_id));
+                    stmt_id += 1;
+                }
                 let js = render_js(expr, 0);
                 if i == stmts.len() - 1 {
                     lines.push(js);
