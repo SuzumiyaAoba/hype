@@ -1,0 +1,13 @@
+;; Console I/O FFI Functions
+;;
+;; This module provides console output functions for Hype.
+;; Import with: (import "std/console.ffi.hp")
+
+;; Log - Output a message to console.log
+(external log (-> String Unit) "console.log")
+
+;; Warn - Output a warning message to console.warn
+(external warn (-> String Unit) "console.warn")
+
+;; Error - Output an error message to console.error
+(external error (-> String Unit) "console.error")

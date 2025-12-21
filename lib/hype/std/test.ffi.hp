@@ -1,0 +1,25 @@
+;; Test Support FFI Functions
+;;
+;; This module provides basic testing utilities for Hype.
+;; Import with: (import "std/test.ffi.hp")
+
+;; Assert - Throws an error if the condition is false
+(external assert (-> Bool Unit) "function(cond) { if (!cond) throw new Error('Assertion failed'); }")
+
+;; Assert Equal for Numbers - Takes two Numbers and returns Unit
+(external assert_eq (-> Number Number Unit) "function(actual, expected) { if (actual !== expected) throw new Error(`Assertion failed: expected ${expected}, got ${actual}`); }")
+
+;; Assert Equal for Strings - Takes two Strings and returns Unit
+(external assert_eq_str (-> String String Unit) "function(actual, expected) { if (actual !== expected) throw new Error(`Assertion failed: expected '${expected}', got '${actual}'`); }")
+
+;; Assert Equal for Booleans - Takes two Bools and returns Unit
+(external assert_eq_bool (-> Bool Bool Unit) "function(actual, expected) { if (actual !== expected) throw new Error(`Assertion failed: expected ${expected}, got ${actual}`); }")
+
+;; Debug - Print a debug message
+(external debug (-> String Unit) "function(msg) { console.log('[DEBUG]', msg); }")
+
+;; Test Pass - Print a success message
+(external test_pass (-> String Unit) "function(msg) { console.log('✓', msg); }")
+
+;; Test Fail - Print a failure message
+(external test_fail (-> String Unit) "function(msg) { console.error('✗', msg); }")
