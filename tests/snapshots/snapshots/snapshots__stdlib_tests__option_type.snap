@@ -1,0 +1,7 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function unwrap_or(opt, default) { return (() => { const __match = opt; if (__match.__tag === "None") { return default; } else if (__match.__tag === "Some") { const v = __match.value; return v; } return undefined; })(); }
+function is_some(opt) { return (() => { const __match = opt; if (__match.__tag === "None") { return false; } else if (__match.__tag === "Some") { return true; } return undefined; })(); }
+(() => { let x = { __tag: "Some", value: 42 }; return (() => { let y = { __tag: "None" }; return (() => { let z = unwrap_or(x, 0); return (() => { let w = unwrap_or(y, 99); return z + w; })(); })(); })(); })()

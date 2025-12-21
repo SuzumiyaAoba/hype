@@ -1,0 +1,148 @@
+;; Hype Standard Library - Math
+;; 数学関数
+
+;; ===== 基本的な数学関数 =====
+
+;; 絶対値
+(defn abs [x]
+  (if (< x 0)
+    (- 0 x)
+    x))
+
+;; 2つの値の最小値
+(defn min [a b]
+  (if (< a b) a b))
+
+;; 2つの値の最大値
+(defn max [a b]
+  (if (> a b) a b))
+
+;; リストの最小値（Option型で返す）
+(defn min_list [lst]
+  (match lst
+    [[] None]
+    [[x ...rest]
+      (let-rec [
+        [helper (fn [l current_min]
+          (match l
+            [[] (Some {:value current_min})]
+            [[y ...ys] (helper ys (min current_min y))]))]
+      ]
+        (helper rest x))]))
+
+;; リストの最大値（Option型で返す）
+(defn max_list [lst]
+  (match lst
+    [[] None]
+    [[x ...rest]
+      (let-rec [
+        [helper (fn [l current_max]
+          (match l
+            [[] (Some {:value current_max})]
+            [[y ...ys] (helper ys (max current_max y))]))]
+      ]
+        (helper rest x))]))
+
+;; 累乗（整数指数のみ、末尾再帰）
+(defn pow [base exp]
+  (let-rec [
+    [helper (fn [b e acc]
+      (if (== e 0)
+        acc
+        (helper b (- e 1) (* acc b))))]
+  ]
+    (if (< exp 0)
+      0  ;; 負の指数は未サポート
+      (helper base exp 1))))
+
+;; 階乗（末尾再帰）
+(defn factorial [n]
+  (let-rec [
+    [helper (fn [x acc]
+      (if (<= x 1)
+        acc
+        (helper (- x 1) (* acc x))))]
+  ]
+    (helper n 1)))
+
+;; 最大公約数（ユークリッドの互除法、末尾再帰）
+(defn gcd [a b]
+  (if (== b 0)
+    (abs a)
+    (gcd b (% a b))))
+
+;; 最小公倍数
+(defn lcm [a b]
+  (if (or (== a 0) (== b 0))
+    0
+    (/ (* (abs a) (abs b)) (gcd a b))))
+
+;; ===== 範囲生成 =====
+
+;; start から end-1 までの整数リストを生成（末尾再帰）
+(defn range [start end]
+  (let-rec [
+    [helper (fn [current acc]
+      (if (>= current end)
+        (reverse acc)
+        (helper (+ current 1) [current ...acc])))]
+  ]
+    (helper start [])))
+
+;; 0 から n-1 までの整数リストを生成
+(defn range_n [n]
+  (range 0 n))
+
+;; ===== 集計関数 =====
+
+;; リストの合計（末尾再帰）
+(defn sum [lst]
+  (let-rec [
+    [helper (fn [l acc]
+      (match l
+        [[] acc]
+        [[x ...rest] (helper rest (+ acc x))]))]
+  ]
+    (helper lst 0)))
+
+;; リストの積（末尾再帰）
+(defn product [lst]
+  (let-rec [
+    [helper (fn [l acc]
+      (match l
+        [[] acc]
+        [[x ...rest] (helper rest (* acc x))]))]
+  ]
+    (helper lst 1)))
+
+;; リストの平均値（Option型で返す）
+(defn average [lst]
+  (if (== (length lst) 0)
+    None
+    (Some {:value (/ (sum lst) (length lst))})))
+
+;; ===== ユーティリティ =====
+
+;; 値が範囲内にあるか判定
+(defn in_range [x min_val max_val]
+  (and (>= x min_val) (<= x max_val)))
+
+;; 値を範囲内にクランプ
+(defn clamp [x min_val max_val]
+  (max min_val (min x max_val)))
+
+;; 符号を返す (-1, 0, 1)
+(defn sign [x]
+  (if (> x 0)
+    1
+    (if (< x 0)
+      (- 0 1)
+      0)))
+
+;; 偶数か判定
+(defn is_even [n]
+  (== (% n 2) 0))
+
+;; 奇数か判定
+(defn is_odd [n]
+  (== (% n 2) 1))

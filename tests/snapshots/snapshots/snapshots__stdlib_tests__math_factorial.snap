@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function factorial(n, acc) { while (true) { const __match = n <= 1; if (__match === true) { return acc; } else if (__match === false) { [n, acc] = [n - 1, acc * n]; continue; } return undefined; } }
+factorial(5, 1)

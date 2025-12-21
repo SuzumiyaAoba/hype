@@ -1,0 +1,7 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function head(lst) { return (() => { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return { __tag: "None" }; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const x = __match[0]; const _ = __match.slice(1); return { __tag: "Some", value: x }; } return undefined; })(); }
+function tail(lst) { return (() => { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return { __tag: "None" }; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const xs = __match.slice(1); return { __tag: "Some", value: xs }; } return undefined; })(); }
+(() => { let h = head([1, 2, 3]); return (() => { let t = tail([1, 2, 3]); return h; })(); })()

@@ -16,7 +16,7 @@ pub fn binop_precedence(op: &BinOp) -> u8 {
         BinOp::Eq | BinOp::Ne => 3,
         BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => 4,
         BinOp::Add | BinOp::Sub => 5,
-        BinOp::Mul | BinOp::Div => 6,
+        BinOp::Mul | BinOp::Div | BinOp::Mod => 6,
     }
 }
 
@@ -26,6 +26,7 @@ fn binop_symbol(op: &BinOp) -> &'static str {
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::Div => "/",
+        BinOp::Mod => "%",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",

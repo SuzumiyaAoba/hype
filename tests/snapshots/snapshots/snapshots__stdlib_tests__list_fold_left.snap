@@ -1,0 +1,6 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function fold_left(f, init, lst) { while (true) { const __match = lst; if (Array.isArray(__match) && __match.length === 0) { return init; } else if (Array.isArray(__match) && __match.length >= 1 && true) { const x = __match[0]; const rest = __match.slice(1); [f, init, lst] = [f, f(init, x), rest]; continue; } return undefined; } }
+(() => { let add = (function(a, b) { return a + b; }); return fold_left(add, 0, [1, 2, 3, 4, 5]); })()

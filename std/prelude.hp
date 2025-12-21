@@ -1,0 +1,80 @@
+;; Hype Standard Library - Prelude
+;; 基本的な型定義と関数
+
+;; ===== Option型 =====
+;; 値が存在するかしないかを表す型
+(deftype Option [A]
+  None
+  (Some {:value A}))
+
+;; Option値をデフォルト値で展開
+(defn unwrap_or [opt default]
+  (match opt
+    [None default]
+    [(Some {:value v}) v]))
+
+;; Option値をmapで変換
+(defn map_option [f opt]
+  (match opt
+    [None None]
+    [(Some {:value v}) (Some {:value (f v)})]))
+
+;; Option値をflatMapで変換
+(defn flat_map_option [f opt]
+  (match opt
+    [None None]
+    [(Some {:value v}) (f v)]))
+
+;; Option値が存在するか判定
+(defn is_some [opt]
+  (match opt
+    [None false]
+    [(Some {:value _}) true]))
+
+;; Option値が存在しないか判定
+(defn is_none [opt]
+  (match opt
+    [None true]
+    [(Some {:value _}) false]))
+
+;; ===== Result型 =====
+;; 成功または失敗を表す型
+(deftype Result [T E]
+  (Ok {:value T})
+  (Err {:error E}))
+
+;; Result値をデフォルト値で展開
+(defn unwrap_or_result [res default]
+  (match res
+    [(Ok {:value v}) v]
+    [(Err {:error _}) default]))
+
+;; Result値をmapで変換（成功の場合のみ）
+(defn map_result [f res]
+  (match res
+    [(Ok {:value v}) (Ok {:value (f v)})]
+    [(Err {:error e}) (Err {:error e})]))
+
+;; Result値をflatMapで変換
+(defn flat_map_result [f res]
+  (match res
+    [(Ok {:value v}) (f v)]
+    [(Err {:error e}) (Err {:error e})]))
+
+;; Result値が成功か判定
+(defn is_ok [res]
+  (match res
+    [(Ok {:value _}) true]
+    [(Err {:error _}) false]))
+
+;; Result値が失敗か判定
+(defn is_err [res]
+  (match res
+    [(Ok {:value _}) false]
+    [(Err {:error _}) true]))
+
+;; Resultのエラー部分をmapで変換
+(defn map_err [f res]
+  (match res
+    [(Ok {:value v}) (Ok {:value v})]
+    [(Err {:error e}) (Err {:error (f e)})]))

@@ -1,0 +1,7 @@
+---
+source: tests/snapshots/stdlib_tests.rs
+expression: js
+---
+function abs(x) { return (() => { const __match = x < 0; if (__match === true) { return 0 - x; } else if (__match === false) { return x; } return undefined; })(); }
+function gcd(a, b) { while (true) { const __match = b == 0; if (__match === true) { return abs(a); } else if (__match === false) { [a, b] = [b, a % b]; continue; } return undefined; } }
+gcd(48, 18)
